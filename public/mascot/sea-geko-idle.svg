@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="SEA-Geko idle mascot">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="70%">
+      <stop offset="0%" stop-color="#d9ff8a"/>
+      <stop offset="100%" stop-color="#66b31d"/>
+    </radialGradient>
+  </defs>
+  <rect width="256" height="256" rx="40" fill="#f2f8eb"/>
+  <ellipse cx="128" cy="216" rx="64" ry="14" fill="#d4dfca"/>
+  <ellipse cx="128" cy="122" rx="84" ry="72" fill="url(#bg)" stroke="#2f6d1b" stroke-width="5"/>
+  <ellipse cx="128" cy="156" rx="44" ry="40" fill="#eef9c7"/>
+  <ellipse cx="98" cy="114" rx="20" ry="23" fill="#fff"/>
+  <ellipse cx="158" cy="114" rx="20" ry="23" fill="#fff"/>
+  <ellipse cx="101" cy="117" rx="11" ry="13" fill="#2a1b10"/>
+  <ellipse cx="155" cy="117" rx="11" ry="13" fill="#2a1b10"/>
+  <circle cx="105" cy="112" r="4" fill="#fff"/>
+  <circle cx="159" cy="112" r="4" fill="#fff"/>
+  <ellipse cx="118" cy="140" rx="4" ry="3" fill="#6a9e24"/>
+  <ellipse cx="138" cy="140" rx="4" ry="3" fill="#6a9e24"/>
+  <path d="M106 164c7 11 37 11 44 0" fill="none" stroke="#43250f" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="84" cy="137" r="9" fill="#ff9a5a"/>
+  <circle cx="172" cy="137" r="9" fill="#ff9a5a"/>
+</svg>

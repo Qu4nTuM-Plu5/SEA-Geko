@@ -1,0 +1,1 @@
+{"text":"{\n  \"data\": {\n    \"learningCards\": [\n      {\n        \"title\": \"Java Basics Quiz Essentials\",\n        \"content\": \"Test your understanding of Java control structures.\",\n        \"layout\": \"grid\"\n      }\n    ]\n  }\n}","provider":"openrouter","model":"openai/gpt-4o-mini","at":1772374377151}
