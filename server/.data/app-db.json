@@ -1,0 +1,2837 @@
+{
+  "profiles": [
+    {
+      "id": "local-o0ebsdj8",
+      "email": "",
+      "userSegment": "youth",
+      "connectivityLevel": "offline_first",
+      "learningGoal": "python",
+      "preferredLanguage": "my",
+      "region": "ASEAN",
+      "deviceClass": "mobile",
+      "lowBandwidthMode": true,
+      "updatedAt": "2026-03-03T13:15:56.032Z",
+      "createdAt": "2026-03-03T13:15:56.032Z"
+    },
+    {
+      "id": "local-pfhuzhe1",
+      "email": "",
+      "userSegment": "youth",
+      "connectivityLevel": "normal",
+      "learningGoal": "",
+      "preferredLanguage": "en",
+      "region": "ASEAN",
+      "deviceClass": "unknown",
+      "lowBandwidthMode": false,
+      "updatedAt": "2026-03-03T13:23:32.833Z",
+      "createdAt": "2026-03-03T13:23:32.834Z"
+    },
+    {
+      "id": "local-oixzxkq5",
+      "email": "",
+      "userSegment": "educator",
+      "connectivityLevel": "normal",
+      "learningGoal": "java",
+      "preferredLanguage": "my",
+      "region": "ASEAN",
+      "deviceClass": "mobile",
+      "lowBandwidthMode": false,
+      "updatedAt": "2026-03-03T15:08:58.351Z",
+      "createdAt": "2026-03-03T15:08:58.351Z"
+    },
+    {
+      "id": "local-2qhtnoct",
+      "email": "",
+      "userSegment": "youth",
+      "connectivityLevel": "normal",
+      "learningGoal": "",
+      "preferredLanguage": "en",
+      "region": "ASEAN",
+      "deviceClass": "unknown",
+      "lowBandwidthMode": false,
+      "updatedAt": "2026-03-03T15:37:39.732Z",
+      "createdAt": "2026-03-03T15:37:39.732Z"
+    },
+    {
+      "id": "local-qqfyf9w9",
+      "email": "",
+      "userSegment": "educator",
+      "connectivityLevel": "low_bandwidth",
+      "learningGoal": "iidk",
+      "preferredLanguage": "my",
+      "region": "ASEAN",
+      "discoverySource": "friend",
+      "deviceClass": "mobile",
+      "lowBandwidthMode": true,
+      "updatedAt": "2026-03-03T21:52:37.828Z",
+      "createdAt": "2026-03-03T21:52:37.828Z"
+    }
+  ],
+  "pretests": [
+    {
+      "id": "pre-1772551047269-jzm5g4",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "scorePct": 75,
+      "createdAt": "2026-03-03T15:17:27.269Z"
+    }
+  ],
+  "posttests": [
+    {
+      "id": "post-1772551047295-3rx547",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "scorePct": 75,
+      "createdAt": "2026-03-03T15:17:27.295Z"
+    }
+  ],
+  "confidence": [
+    {
+      "id": "conf-1772551047272-n3btmj",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "phase": "pre",
+      "score": 3,
+      "createdAt": "2026-03-03T15:17:27.272Z"
+    },
+    {
+      "id": "conf-1772551047303-2s1okr",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "phase": "post",
+      "score": 4,
+      "createdAt": "2026-03-03T15:17:27.303Z"
+    }
+  ],
+  "events": [
+    {
+      "id": "ev-1772543886692-iook2m",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "course_started",
+      "payload": {
+        "segment": "youth",
+        "language": "en",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-03T13:18:06.692Z"
+    },
+    {
+      "id": "ev-1772543886707-gvb5e8",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T13:18:06.707Z"
+    },
+    {
+      "id": "ev-1772543886720-alzvx3",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T13:18:06.720Z"
+    },
+    {
+      "id": "ev-1772543891525-fbfuio",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "course_started",
+      "payload": {
+        "segment": "youth",
+        "language": "my",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-03T13:18:11.525Z"
+    },
+    {
+      "id": "ev-1772543891538-dfd5ud",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T13:18:11.538Z"
+    },
+    {
+      "id": "ev-1772543891573-84os1e",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T13:18:11.573Z"
+    },
+    {
+      "id": "ev-1772543904109-xcy7z0",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "course_started",
+      "payload": {
+        "segment": "youth",
+        "language": "my",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-03T13:18:24.109Z"
+    },
+    {
+      "id": "ev-1772543904128-p7ixfq",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T13:18:24.128Z"
+    },
+    {
+      "id": "ev-1772543904141-cd7ade",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T13:18:24.141Z"
+    },
+    {
+      "id": "ev-1772543906192-9me928",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "course_started",
+      "payload": {
+        "segment": "youth",
+        "language": "my",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-03T13:18:26.192Z"
+    },
+    {
+      "id": "ev-1772543906205-byjp74",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T13:18:26.205Z"
+    },
+    {
+      "id": "ev-1772543906212-x266pb",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T13:18:26.212Z"
+    },
+    {
+      "id": "ev-1772543929486-91r4ae",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "course_started",
+      "payload": {
+        "segment": "youth",
+        "language": "my",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-03T13:18:49.486Z"
+    },
+    {
+      "id": "ev-1772543929507-qltxci",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T13:18:49.507Z"
+    },
+    {
+      "id": "ev-1772543929524-noyins",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T13:18:49.524Z"
+    },
+    {
+      "id": "ev-1772543931078-jl57uq",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "course_started",
+      "payload": {
+        "segment": "youth",
+        "language": "my",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-03T13:18:51.078Z"
+    },
+    {
+      "id": "ev-1772543931130-y3qre2",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T13:18:51.130Z"
+    },
+    {
+      "id": "ev-1772543931170-j3xxdt",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T13:18:51.170Z"
+    },
+    {
+      "id": "ev-1772543933172-gut7e8",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "course_started",
+      "payload": {
+        "segment": "youth",
+        "language": "my",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-03T13:18:53.172Z"
+    },
+    {
+      "id": "ev-1772543933189-11xj1d",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T13:18:53.189Z"
+    },
+    {
+      "id": "ev-1772543933203-17xf3s",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T13:18:53.203Z"
+    },
+    {
+      "id": "ev-1772543935438-puqm15",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "course_started",
+      "payload": {
+        "segment": "youth",
+        "language": "my",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-03T13:18:55.438Z"
+    },
+    {
+      "id": "ev-1772543935452-bpzgm1",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T13:18:55.452Z"
+    },
+    {
+      "id": "ev-1772543935462-909bb1",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T13:18:55.462Z"
+    },
+    {
+      "id": "ev-1772543937338-pycb36",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "course_started",
+      "payload": {
+        "segment": "youth",
+        "language": "my",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-03T13:18:57.338Z"
+    },
+    {
+      "id": "ev-1772543937393-ax1toa",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T13:18:57.393Z"
+    },
+    {
+      "id": "ev-1772543937432-yznvhv",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T13:18:57.432Z"
+    },
+    {
+      "id": "ev-1772543939796-2v837n",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "course_started",
+      "payload": {
+        "segment": "youth",
+        "language": "my",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-03T13:18:59.796Z"
+    },
+    {
+      "id": "ev-1772543939807-ctetlo",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T13:18:59.807Z"
+    },
+    {
+      "id": "ev-1772543939814-2v5f1r",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T13:18:59.814Z"
+    },
+    {
+      "id": "ev-1772543941524-qfruto",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "course_started",
+      "payload": {
+        "segment": "youth",
+        "language": "my",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-03T13:19:01.524Z"
+    },
+    {
+      "id": "ev-1772543941559-isexkj",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T13:19:01.559Z"
+    },
+    {
+      "id": "ev-1772543941584-jvkgph",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T13:19:01.584Z"
+    },
+    {
+      "id": "ev-1772543943162-ymaqy6",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "course_started",
+      "payload": {
+        "segment": "youth",
+        "language": "my",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-03T13:19:03.162Z"
+    },
+    {
+      "id": "ev-1772543943174-sdxmj2",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T13:19:03.174Z"
+    },
+    {
+      "id": "ev-1772543943181-gwq51q",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T13:19:03.181Z"
+    },
+    {
+      "id": "ev-1772543944880-9fqbs9",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "course_started",
+      "payload": {
+        "segment": "youth",
+        "language": "my",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-03T13:19:04.880Z"
+    },
+    {
+      "id": "ev-1772543944889-6bi7db",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T13:19:04.889Z"
+    },
+    {
+      "id": "ev-1772543944901-8d01nc",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T13:19:04.901Z"
+    },
+    {
+      "id": "ev-1772543946659-sl0xq8",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "course_started",
+      "payload": {
+        "segment": "youth",
+        "language": "my",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-03T13:19:06.659Z"
+    },
+    {
+      "id": "ev-1772543946673-i5p17o",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T13:19:06.674Z"
+    },
+    {
+      "id": "ev-1772543946694-ovdr78",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T13:19:06.694Z"
+    },
+    {
+      "id": "ev-1772544131501-5ylcp5",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Pengantar Python untuk Pemula",
+      "type": "course_started",
+      "payload": {
+        "segment": "youth",
+        "language": "my",
+        "lowBandwidthMode": true
+      },
+      "date": "2026-03-03T13:22:11.501Z"
+    },
+    {
+      "id": "ev-1772544131521-ewmxt0",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Pengantar Python untuk Pemula",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T13:22:11.521Z"
+    },
+    {
+      "id": "ev-1772544131582-jbbiq5",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Pengantar Python untuk Pemula",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T13:22:11.582Z"
+    },
+    {
+      "id": "ev-1772544134455-r3r1pm",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Pengantar Python untuk Pemula",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T13:22:11.419Z"
+    },
+    {
+      "id": "ev-1772544143118-wxohvc",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "course_started",
+      "payload": {
+        "segment": "youth",
+        "language": "my",
+        "lowBandwidthMode": true
+      },
+      "date": "2026-03-03T13:22:23.118Z"
+    },
+    {
+      "id": "ev-1772544143127-s4f1v6",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T13:22:23.127Z"
+    },
+    {
+      "id": "ev-1772544143136-70duc8",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T13:22:23.136Z"
+    },
+    {
+      "id": "ev-1772544155267-9n5ndz",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "course_started",
+      "payload": {
+        "segment": "youth",
+        "language": "my",
+        "lowBandwidthMode": true
+      },
+      "date": "2026-03-03T13:22:35.267Z"
+    },
+    {
+      "id": "ev-1772544155290-ji0oyl",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T13:22:35.290Z"
+    },
+    {
+      "id": "ev-1772544155302-gqkzyh",
+      "accountId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T13:22:35.302Z"
+    },
+    {
+      "id": "ev-1772544281568-k0nwaz",
+      "accountId": "local-pfhuzhe1",
+      "courseId": "course:Introduction to Python for Beginners",
+      "type": "course_started",
+      "payload": {
+        "segment": "youth",
+        "language": "en",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-03T13:24:41.568Z"
+    },
+    {
+      "id": "ev-1772544281584-30hf5p",
+      "accountId": "local-pfhuzhe1",
+      "courseId": "course:Introduction to Python for Beginners",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T13:24:41.584Z"
+    },
+    {
+      "id": "ev-1772544281664-0fm9cj",
+      "accountId": "local-pfhuzhe1",
+      "courseId": "course:Introduction to Python for Beginners",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T13:24:41.664Z"
+    },
+    {
+      "id": "ev-1772544282702-ctgm6w",
+      "accountId": "local-pfhuzhe1",
+      "courseId": "course:Introduction to Python for Beginners",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T13:24:41.542Z"
+    },
+    {
+      "id": "ev-1772550827481-yaq8ge",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "type": "course_started",
+      "payload": {
+        "segment": "educator",
+        "language": "my",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-03T15:13:47.481Z"
+    },
+    {
+      "id": "ev-1772550827490-bnvka1",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T15:13:47.490Z"
+    },
+    {
+      "id": "ev-1772550827498-bgkknl",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T15:13:47.498Z"
+    },
+    {
+      "id": "ev-1772550972077-sv766s",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "type": "course_started",
+      "payload": {
+        "segment": "educator",
+        "language": "my",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-03T15:16:12.077Z"
+    },
+    {
+      "id": "ev-1772550972091-gzaniz",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T15:16:12.091Z"
+    },
+    {
+      "id": "ev-1772550972098-omltlj",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T15:16:12.098Z"
+    },
+    {
+      "id": "ev-1772551009432-dcgfsy",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "type": "course_started",
+      "payload": {
+        "segment": "educator",
+        "language": "my",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-03T15:16:49.432Z"
+    },
+    {
+      "id": "ev-1772551009437-bltp2o",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T15:16:49.437Z"
+    },
+    {
+      "id": "ev-1772551009441-eig8yr",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T15:16:49.441Z"
+    },
+    {
+      "id": "ev-1772551023882-a587d1",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module1",
+        "lessonNumber": 2
+      },
+      "date": "2026-03-03T15:17:03.882Z"
+    },
+    {
+      "id": "ev-1772551047244-32bnb4",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "type": "quiz_submitted",
+      "payload": {
+        "moduleId": "module1",
+        "stepId": "step7",
+        "passed": true,
+        "score": 3,
+        "percentage": 75,
+        "finalAssessment": true
+      },
+      "date": "2026-03-03T15:17:27.244Z"
+    },
+    {
+      "id": "ev-1772551047309-pjyna6",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "type": "lesson_completed",
+      "payload": {
+        "moduleId": "module1"
+      },
+      "date": "2026-03-03T15:17:27.309Z"
+    },
+    {
+      "id": "ev-1772551051331-5hp5vs",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module2",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T15:17:31.331Z"
+    },
+    {
+      "id": "ev-1772551093126-yz2kpb",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module2",
+        "lessonNumber": 3
+      },
+      "date": "2026-03-03T15:18:13.126Z"
+    },
+    {
+      "id": "ev-1772551101382-1hs76l",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module2",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T15:18:21.382Z"
+    },
+    {
+      "id": "ev-1772551393796-ipl73h",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "type": "course_started",
+      "payload": {
+        "segment": "educator",
+        "language": "my",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-03T15:23:13.796Z"
+    },
+    {
+      "id": "ev-1772551393800-bomm7s",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T15:23:13.800Z"
+    },
+    {
+      "id": "ev-1772551393806-fhtz56",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T15:23:13.806Z"
+    },
+    {
+      "id": "ev-1772551467162-wfmuc3",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module1",
+        "lessonNumber": 2
+      },
+      "date": "2026-03-03T15:24:27.162Z"
+    },
+    {
+      "id": "ev-1772551475031-42wv2a",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module2",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T15:24:35.031Z"
+    },
+    {
+      "id": "ev-1772551486132-6nadjg",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module1",
+        "lessonNumber": 2
+      },
+      "date": "2026-03-03T15:24:46.132Z"
+    },
+    {
+      "id": "ev-1772551499991-ozc8oz",
+      "accountId": "local-oixzxkq5",
+      "courseId": "course:Java Programming for Web Development",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module2",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T15:24:59.991Z"
+    },
+    {
+      "id": "ev-1772574845058-i6v9j8",
+      "accountId": "local-qqfyf9w9",
+      "courseId": "course:Python for Educators: From Beginner to Expert",
+      "type": "course_started",
+      "payload": {
+        "segment": "educator",
+        "language": "my",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-03T21:54:05.058Z"
+    },
+    {
+      "id": "ev-1772574845065-mu8mr8",
+      "accountId": "local-qqfyf9w9",
+      "courseId": "course:Python for Educators: From Beginner to Expert",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T21:54:05.065Z"
+    },
+    {
+      "id": "ev-1772574845072-6fnjmk",
+      "accountId": "local-qqfyf9w9",
+      "courseId": "course:Python for Educators: From Beginner to Expert",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T21:54:05.072Z"
+    },
+    {
+      "id": "ev-1772574909650-49n9i3",
+      "accountId": "local-qqfyf9w9",
+      "courseId": "course:Python for Educators: From Beginner to Expert",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 3
+      },
+      "date": "2026-03-03T21:55:09.650Z"
+    },
+    {
+      "id": "ev-1772574924297-1mg3vl",
+      "accountId": "local-qqfyf9w9",
+      "courseId": "course:Python for Educators: From Beginner to Expert",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 2
+      },
+      "date": "2026-03-03T21:55:24.297Z"
+    },
+    {
+      "id": "ev-1772575052600-ob0crr",
+      "accountId": "local-qqfyf9w9",
+      "courseId": "course:Pengantar Python untuk Pendidik",
+      "type": "course_started",
+      "payload": {
+        "segment": "educator",
+        "language": "my",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-03T21:57:32.600Z"
+    },
+    {
+      "id": "ev-1772575052608-qoguyq",
+      "accountId": "local-qqfyf9w9",
+      "courseId": "course:Pengantar Python untuk Pendidik",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T21:57:32.608Z"
+    },
+    {
+      "id": "ev-1772575052616-t75g9s",
+      "accountId": "local-qqfyf9w9",
+      "courseId": "course:Pengantar Python untuk Pendidik",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T21:57:32.616Z"
+    },
+    {
+      "id": "ev-1772575225176-vipael",
+      "accountId": "local-qqfyf9w9",
+      "courseId": "course:Pengantar Python untuk Pendidik",
+      "type": "course_started",
+      "payload": {
+        "segment": "educator",
+        "language": "my",
+        "lowBandwidthMode": true
+      },
+      "date": "2026-03-03T22:00:25.176Z"
+    },
+    {
+      "id": "ev-1772575225183-0thi4x",
+      "accountId": "local-qqfyf9w9",
+      "courseId": "course:Pengantar Python untuk Pendidik",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T22:00:25.183Z"
+    },
+    {
+      "id": "ev-1772575225190-4a4e2w",
+      "accountId": "local-qqfyf9w9",
+      "courseId": "course:Pengantar Python untuk Pendidik",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T22:00:25.190Z"
+    },
+    {
+      "id": "ev-1772575328591-08n9sf",
+      "accountId": "local-qqfyf9w9",
+      "courseId": "course:Pengantar Python untuk Pendidik",
+      "type": "course_started",
+      "payload": {
+        "segment": "educator",
+        "language": "my",
+        "lowBandwidthMode": true
+      },
+      "date": "2026-03-03T22:02:08.591Z"
+    },
+    {
+      "id": "ev-1772575328615-8826zx",
+      "accountId": "local-qqfyf9w9",
+      "courseId": "course:Pengantar Python untuk Pendidik",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T22:02:08.615Z"
+    },
+    {
+      "id": "ev-1772575328633-ef3sgp",
+      "accountId": "local-qqfyf9w9",
+      "courseId": "course:Pengantar Python untuk Pendidik",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T22:02:08.634Z"
+    },
+    {
+      "id": "ev-1772575353094-zafmrc",
+      "accountId": "local-qqfyf9w9",
+      "courseId": "course:Pengantar Python untuk Pendidik",
+      "type": "course_started",
+      "payload": {
+        "segment": "educator",
+        "language": "my",
+        "lowBandwidthMode": true
+      },
+      "date": "2026-03-03T22:02:33.094Z"
+    },
+    {
+      "id": "ev-1772575353116-95kmbh",
+      "accountId": "local-qqfyf9w9",
+      "courseId": "course:Pengantar Python untuk Pendidik",
+      "type": "daily_active",
+      "payload": {
+        "day": "2026-03-03"
+      },
+      "date": "2026-03-03T22:02:33.116Z"
+    },
+    {
+      "id": "ev-1772575353155-basp0e",
+      "accountId": "local-qqfyf9w9",
+      "courseId": "course:Pengantar Python untuk Pendidik",
+      "type": "lesson_started",
+      "payload": {
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-03T22:02:33.155Z"
+    }
+  ],
+  "publicPosts": [
+    {
+      "id": "pub-1772551555757-s0utqs",
+      "courseId": "Java Programming for Web Development",
+      "ownerId": "local-oixzxkq5",
+      "title": "Java Programming for Web Development",
+      "description": "A comprehensive course designed for educators to teach Java programming with a focus on web development. This course covers fundamental concepts, practical applications, and best practices in Java programming.",
+      "language": "en",
+      "segment": "youth",
+      "visibility": "private",
+      "moderationStatus": "clean",
+      "reactions": 0,
+      "comments": 0,
+      "saves": 0,
+      "createdAt": "2026-03-03T15:25:55.758Z"
+    },
+    {
+      "id": "pub-1772575104169-so3qee",
+      "courseId": "Pengantar Python untuk Pendidik",
+      "ownerId": "local-qqfyf9w9",
+      "title": "Pengantar Python untuk Pendidik",
+      "description": "Kursus ini dirancang untuk pendidik yang ingin memahami dasar-dasar pemrograman Python dan menerapkannya dalam konteks pengajaran. Kursus ini akan memberikan pemahaman yang kuat tentang sintaksis Python, struktur data, dan cara menggunakan Python untuk mendukung pembelajaran.",
+      "snapshot": {
+        "title": "Pengantar Python untuk Pendidik",
+        "description": "Kursus ini dirancang untuk pendidik yang ingin memahami dasar-dasar pemrograman Python dan menerapkannya dalam konteks pengajaran. Kursus ini akan memberikan pemahaman yang kuat tentang sintaksis Python, struktur data, dan cara menggunakan Python untuk mendukung pembelajaran.",
+        "modules": [
+          {
+            "id": "module_1",
+            "title": "Pengenalan Python",
+            "description": "Module ini memperkenalkan peserta pada Python, termasuk instalasi, lingkungan pengembangan, dan sintaks dasar. Peserta akan belajar cara menulis program sederhana dan memahami struktur dasar kode Python.",
+            "facilitation_tips": "Gunakan papan tulis untuk menulis kode dan menjelaskan konsep. Ajak peserta untuk berpartisipasi dengan menulis kode secara langsung.",
+            "activity": "Tulis program Python pertama yang mencetak 'Hello, World!'",
+            "steps": [
+              {
+                "id": "step1",
+                "title": "Core Concepts of Foundations of Pengenalan Python",
+                "type": "TEXT",
+                "status": "completed",
+                "moduleNumber": 1,
+                "lessonNumber": 1,
+                "segmentNumber": 1,
+                "lessonTitle": "Foundations of Pengenalan Python",
+                "segmentLabel": "Core Concepts",
+                "content": {
+                  "type": "TEXT",
+                  "title": "Konsep Inti Pengenalan Python",
+                  "lessonText": "Pelajari konsep dasar Python yang penting untuk pendidik.",
+                  "data": {
+                    "content": "• Python adalah bahasa pemrograman yang mudah dipelajari dan digunakan.\n• Sintaks Python sederhana dan jelas, membuatnya cocok untuk pemula.\n• Variabel digunakan untuk menyimpan informasi, seperti nama dan angka.\n• Tipe data utama di Python termasuk integer, float, string, dan boolean.\n• Struktur kontrol seperti if, for, dan while membantu dalam pengambilan keputusan dan pengulangan.\n\n**Tips Fasilitasi:**\n- Ajak peserta untuk berdiskusi tentang pengalaman mereka dengan pemrograman.\n- Gunakan papan tulis untuk menggambar struktur kontrol dan tipe data.\n\n**Panduan Praktis:**\n- Sediakan contoh nyata dari penggunaan Python dalam pendidikan, seperti analisis data siswa.\n- Dorong peserta untuk mencoba menulis kode sederhana di kertas untuk menghindari ketergantungan pada perangkat."
+                  }
+                }
+              },
+              {
+                "id": "step-1-1-2-learning_card",
+                "title": "Learning Cards: Foundations of Pengenalan Python Essentials",
+                "type": "LEARNING_CARD",
+                "status": "completed",
+                "moduleNumber": 1,
+                "lessonNumber": 1,
+                "segmentNumber": 2,
+                "lessonTitle": "Foundations of Pengenalan Python",
+                "segmentLabel": "Learning cards",
+                "content": {
+                  "type": "LEARNING_CARD",
+                  "title": "Learning Cards: Foundations of Pengenalan Python Essentials",
+                  "lessonText": "",
+                  "data": {
+                    "learningCards": [
+                      {
+                        "title": "Pengenalan Python untuk Pendidik",
+                        "content": "Python adalah bahasa pemrograman yang mudah dipelajari dan digunakan, cocok untuk pendidik yang ingin memperkenalkan konsep pemrograman kepada siswa.",
+                        "layout": "simple"
+                      },
+                      {
+                        "title": "Sintaks Sederhana",
+                        "content": "Sintaks Python yang jelas dan sederhana memudahkan pendidik dalam mengajarkan dasar-dasar pemrograman kepada siswa.",
+                        "layout": "simple"
+                      },
+                      {
+                        "title": "Penggunaan Variabel",
+                        "content": "Variabel dalam Python digunakan untuk menyimpan informasi, seperti nama, angka, atau data lainnya, yang dapat diajarkan kepada siswa untuk memahami konsep penyimpanan data.",
+                        "layout": "simple"
+                      },
+                      {
+                        "title": "Kegiatan Praktis",
+                        "content": "Ajak siswa untuk membuat program sederhana menggunakan variabel, seperti menghitung luas persegi, untuk memperkuat pemahaman mereka tentang konsep ini.",
+                        "layout": "simple"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "id": "step-1-1-3-flip_card",
+                "title": "Flashcards: Key Terms in Foundations of Pengenalan Python",
+                "type": "FLIP_CARD",
+                "status": "completed",
+                "moduleNumber": 1,
+                "lessonNumber": 1,
+                "segmentNumber": 3,
+                "lessonTitle": "Foundations of Pengenalan Python",
+                "segmentLabel": "Flashcards",
+                "content": {
+                  "type": "FLIP_CARD",
+                  "title": "Flashcards: Key Terms in Foundations of Pengenalan Python",
+                  "lessonText": "",
+                  "data": {
+                    "cards": [
+                      {
+                        "front": "Apa itu Python?",
+                        "back": "Python adalah bahasa pemrograman yang mudah dipelajari dan digunakan, cocok untuk pendidik.",
+                        "icon": "📘",
+                        "imageUrl": ""
+                      },
+                      {
+                        "front": "Apa yang dimaksud dengan sintaks Python?",
+                        "back": "Sintaks Python sederhana dan jelas, membuatnya mudah dipahami oleh pemula.",
+                        "icon": "📝",
+                        "imageUrl": ""
+                      },
+                      {
+                        "front": "Apa fungsi variabel dalam Python?",
+                        "back": "Variabel digunakan untuk menyimpan informasi, seperti nama, angka, atau data lainnya.",
+                        "icon": "💾",
+                        "imageUrl": ""
+                      },
+                      {
+                        "front": "Mengapa Python cocok untuk pendidik?",
+                        "back": "Python memungkinkan pendidik memperkenalkan konsep pemrograman dengan cara yang mudah dan interaktif.",
+                        "icon": "👩‍🏫",
+                        "imageUrl": ""
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "id": "step-1-1-4-video",
+                "title": "Video: Foundations of Pengenalan Python Walkthrough",
+                "type": "VIDEO",
+                "status": "completed",
+                "moduleNumber": 1,
+                "lessonNumber": 1,
+                "segmentNumber": 4,
+                "lessonTitle": "Foundations of Pengenalan Python",
+                "segmentLabel": "Video lesson",
+                "content": {
+                  "type": "TEXT",
+                  "title": "Foundations of Pengenalan Python Walkthrough",
+                  "lessonText": "Video ini memberikan gambaran dasar tentang Python dan aplikasinya dalam pendidikan.",
+                  "data": {
+                    "content": "Dalam video ini, Anda akan belajar tentang:\n- Apa itu Python dan mengapa penting untuk pendidik.\n- Sintaks dasar Python yang sederhana dan jelas.\n- Cara menggunakan variabel untuk menyimpan informasi.\n- Contoh praktis penggunaan Python dalam konteks pendidikan."
+                  }
+                }
+              },
+              {
+                "id": "step-1-1-5-code_builder",
+                "title": "Interactive Coding: Foundations of Pengenalan Python",
+                "type": "CODE_BUILDER",
+                "status": "completed",
+                "moduleNumber": 1,
+                "lessonNumber": 1,
+                "segmentNumber": 5,
+                "lessonTitle": "Foundations of Pengenalan Python",
+                "segmentLabel": "Interactive coding",
+                "content": {
+                  "type": "CODE_BUILDER",
+                  "title": "Interactive Coding: Foundations of Pengenalan Python",
+                  "lessonText": "",
+                  "data": {
+                    "codeBuilder": {
+                      "avatarInstruction": "Bantu siswa memahami penggunaan variabel dalam Python.",
+                      "title": "Interactive Coding",
+                      "goal": "Complete the code by choosing the correct pieces.",
+                      "expectedOutput": "",
+                      "lines": [
+                        {
+                          "content": "nama = '___'",
+                          "correctValue": "John"
+                        },
+                        {
+                          "content": "umur = ___",
+                          "correctValue": "30"
+                        },
+                        {
+                          "content": "___, nama)",
+                          "correctValue": "print('Nama saya adalah'"
+                        },
+                        {
+                          "content": "___, umur)",
+                          "correctValue": "print('Umur saya adalah'"
+                        }
+                      ],
+                      "options": [
+                        "print('Umur saya adalah'",
+                        "print('Nama saya adalah'",
+                        "John",
+                        "30",
+                        "print('Nama saya adalah', nama)",
+                        "print('Umur saya adalah', umur)"
+                      ]
+                    }
+                  }
+                }
+              },
+              {
+                "id": "step-1-1-6-drag_fill",
+                "title": "Challenge: Apply Foundations of Pengenalan Python",
+                "type": "DRAG_FILL",
+                "status": "completed",
+                "moduleNumber": 1,
+                "lessonNumber": 1,
+                "segmentNumber": 6,
+                "lessonTitle": "Foundations of Pengenalan Python",
+                "segmentLabel": "Gamified challenge",
+                "content": {
+                  "type": "DRAG_FILL",
+                  "title": "Challenge: Apply Foundations of Pengenalan Python",
+                  "lessonText": "",
+                  "data": {
+                    "challenges": [
+                      {
+                        "instruction": "Isi bagian yang kosong dengan istilah yang tepat berdasarkan pemahaman Anda tentang Python dari modul ini.",
+                        "codeTemplate": "nama = '___'; umur = ___;",
+                        "options": [
+                          "John",
+                          "25",
+                          "Python",
+                          "programming"
+                        ],
+                        "correctAnswer": "John, 25",
+                        "explanation": "Anda telah belajar bahwa variabel dapat digunakan untuk menyimpan informasi seperti nama dan umur dalam Python."
+                      },
+                      {
+                        "instruction": "Lengkapi kode berikut dengan istilah yang sesuai berdasarkan pengetahuan Anda tentang sintaks Python.",
+                        "codeTemplate": "print('Halo, ___!'); umur = ___;",
+                        "options": [
+                          "dunia",
+                          "siswa",
+                          "Python",
+                          "program"
+                        ],
+                        "correctAnswer": "dunia, siswa",
+                        "explanation": "Sintaks Python memungkinkan Anda untuk mencetak pesan dan menyimpan informasi dengan cara yang sederhana."
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "id": "step-1-1-7-quiz",
+                "title": "Quiz: Foundations of Pengenalan Python Checkpoint",
+                "type": "QUIZ",
+                "status": "completed",
+                "moduleNumber": 1,
+                "lessonNumber": 1,
+                "segmentNumber": 7,
+                "lessonTitle": "Foundations of Pengenalan Python",
+                "segmentLabel": "Quiz",
+                "content": {
+                  "type": "QUIZ",
+                  "title": "Quiz: Foundations of Pengenalan Python Checkpoint",
+                  "lessonText": "",
+                  "data": {
+                    "questions": [
+                      {
+                        "question": "Apa itu Python?",
+                        "options": [
+                          "Bahasa pemrograman yang sulit dipelajari",
+                          "Bahasa pemrograman yang mudah dipelajari dan digunakan",
+                          "Bahasa pemrograman yang hanya digunakan oleh ilmuwan",
+                          "Bahasa pemrograman yang tidak memiliki sintaks"
+                        ],
+                        "correctAnswer": 1,
+                        "explanation": "Python adalah bahasa pemrograman yang mudah dipelajari dan digunakan, cocok untuk pendidik."
+                      },
+                      {
+                        "question": "Mengapa sintaks Python dianggap sederhana?",
+                        "options": [
+                          "Karena banyak simbol yang rumit",
+                          "Karena sintaksnya panjang dan kompleks",
+                          "Karena sintaksnya sederhana dan jelas",
+                          "Karena tidak ada aturan dalam penulisan"
+                        ],
+                        "correctAnswer": 2,
+                        "explanation": "Sintaks Python sederhana dan jelas, membuatnya mudah dipahami."
+                      },
+                      {
+                        "question": "Apa yang dapat Anda lakukan dengan variabel dalam Python?",
+                        "options": [
+                          "Menghapus informasi",
+                          "Menyimpan informasi",
+                          "Menampilkan informasi tanpa menyimpannya",
+                          "Mengubah sintaks Python"
+                        ],
+                        "correctAnswer": 1,
+                        "explanation": "Variabel digunakan untuk menyimpan informasi dalam Python."
+                      },
+                      {
+                        "question": "Apa yang diajarkan dalam video 'Foundations of Pengenalan Python'?",
+                        "options": [
+                          "Cara membuat aplikasi web",
+                          "Apa itu Python dan mengapa penting untuk pendidik",
+                          "Cara menghapus data dari Python",
+                          "Sintaks yang sangat rumit"
+                        ],
+                        "correctAnswer": 1,
+                        "explanation": "Video ini mengajarkan tentang apa itu Python dan mengapa penting untuk pendidik."
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "id": "step2",
+                "title": "Core Concepts of Pengenalan Python in Practice",
+                "type": "TEXT",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 2,
+                "segmentNumber": 1,
+                "lessonTitle": "Pengenalan Python in Practice",
+                "segmentLabel": "Core Concepts"
+              },
+              {
+                "id": "step-1-2-2-learning_card",
+                "title": "Learning Cards: Pengenalan Python in Practice Essentials",
+                "type": "LEARNING_CARD",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 2,
+                "segmentNumber": 2,
+                "lessonTitle": "Pengenalan Python in Practice",
+                "segmentLabel": "Learning cards"
+              },
+              {
+                "id": "step-1-2-3-flip_card",
+                "title": "Flashcards: Key Terms in Pengenalan Python in Practice",
+                "type": "FLIP_CARD",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 2,
+                "segmentNumber": 3,
+                "lessonTitle": "Pengenalan Python in Practice",
+                "segmentLabel": "Flashcards"
+              },
+              {
+                "id": "step-1-2-4-video",
+                "title": "Video: Pengenalan Python in Practice Walkthrough",
+                "type": "VIDEO",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 2,
+                "segmentNumber": 4,
+                "lessonTitle": "Pengenalan Python in Practice",
+                "segmentLabel": "Video lesson"
+              },
+              {
+                "id": "step-1-2-5-code_builder",
+                "title": "Interactive Coding: Pengenalan Python in Practice",
+                "type": "CODE_BUILDER",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 2,
+                "segmentNumber": 5,
+                "lessonTitle": "Pengenalan Python in Practice",
+                "segmentLabel": "Interactive coding"
+              },
+              {
+                "id": "step-1-2-6-drag_fill",
+                "title": "Challenge: Apply Pengenalan Python in Practice",
+                "type": "DRAG_FILL",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 2,
+                "segmentNumber": 6,
+                "lessonTitle": "Pengenalan Python in Practice",
+                "segmentLabel": "Gamified challenge"
+              },
+              {
+                "id": "step-1-2-7-quiz",
+                "title": "Quiz: Pengenalan Python in Practice Checkpoint",
+                "type": "QUIZ",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 2,
+                "segmentNumber": 7,
+                "lessonTitle": "Pengenalan Python in Practice",
+                "segmentLabel": "Quiz"
+              },
+              {
+                "id": "step-1-3-1-text",
+                "title": "Core Concepts of Sintaks Dasar Python",
+                "type": "TEXT",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 3,
+                "segmentNumber": 1,
+                "lessonTitle": "Sintaks Dasar Python",
+                "segmentLabel": "Core Concepts"
+              },
+              {
+                "id": "step-1-3-2-learning_card",
+                "title": "Learning Cards: Sintaks Dasar Python Essentials",
+                "type": "LEARNING_CARD",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 3,
+                "segmentNumber": 2,
+                "lessonTitle": "Sintaks Dasar Python",
+                "segmentLabel": "Learning cards"
+              },
+              {
+                "id": "step3",
+                "title": "Flashcards: Key Terms in Sintaks Dasar Python",
+                "type": "FLIP_CARD",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 3,
+                "segmentNumber": 3,
+                "lessonTitle": "Sintaks Dasar Python",
+                "segmentLabel": "Flashcards"
+              },
+              {
+                "id": "step4",
+                "title": "Video: Sintaks Dasar Python Walkthrough",
+                "type": "VIDEO",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 3,
+                "segmentNumber": 4,
+                "lessonTitle": "Sintaks Dasar Python",
+                "segmentLabel": "Video lesson"
+              },
+              {
+                "id": "step-1-3-5-code_builder",
+                "title": "Interactive Coding: Sintaks Dasar Python",
+                "type": "CODE_BUILDER",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 3,
+                "segmentNumber": 5,
+                "lessonTitle": "Sintaks Dasar Python",
+                "segmentLabel": "Interactive coding"
+              },
+              {
+                "id": "step-1-3-6-drag_fill",
+                "title": "Challenge: Apply Sintaks Dasar Python",
+                "type": "DRAG_FILL",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 3,
+                "segmentNumber": 6,
+                "lessonTitle": "Sintaks Dasar Python",
+                "segmentLabel": "Gamified challenge"
+              },
+              {
+                "id": "step-1-3-7-quiz",
+                "title": "Quiz: Sintaks Dasar Python Checkpoint",
+                "type": "QUIZ",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 3,
+                "segmentNumber": 7,
+                "lessonTitle": "Sintaks Dasar Python",
+                "segmentLabel": "Quiz"
+              },
+              {
+                "id": "step-1-4-1-text",
+                "title": "Core Concepts of Struktur Dasar Kode Python",
+                "type": "TEXT",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 4,
+                "segmentNumber": 1,
+                "lessonTitle": "Struktur Dasar Kode Python",
+                "segmentLabel": "Core Concepts"
+              },
+              {
+                "id": "step-1-4-2-learning_card",
+                "title": "Learning Cards: Struktur Dasar Kode Python Essentials",
+                "type": "LEARNING_CARD",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 4,
+                "segmentNumber": 2,
+                "lessonTitle": "Struktur Dasar Kode Python",
+                "segmentLabel": "Learning cards"
+              },
+              {
+                "id": "step-1-4-3-flip_card",
+                "title": "Flashcards: Key Terms in Struktur Dasar Kode Python",
+                "type": "FLIP_CARD",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 4,
+                "segmentNumber": 3,
+                "lessonTitle": "Struktur Dasar Kode Python",
+                "segmentLabel": "Flashcards"
+              },
+              {
+                "id": "step-1-4-4-video",
+                "title": "Video: Struktur Dasar Kode Python Walkthrough",
+                "type": "VIDEO",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 4,
+                "segmentNumber": 4,
+                "lessonTitle": "Struktur Dasar Kode Python",
+                "segmentLabel": "Video lesson"
+              },
+              {
+                "id": "step5",
+                "title": "Interactive Coding: Struktur Dasar Kode Python",
+                "type": "CODE_BUILDER",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 4,
+                "segmentNumber": 5,
+                "lessonTitle": "Struktur Dasar Kode Python",
+                "segmentLabel": "Interactive coding"
+              },
+              {
+                "id": "step6",
+                "title": "Challenge: Apply Struktur Dasar Kode Python",
+                "type": "DRAG_FILL",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 4,
+                "segmentNumber": 6,
+                "lessonTitle": "Struktur Dasar Kode Python",
+                "segmentLabel": "Gamified challenge"
+              },
+              {
+                "id": "step-1-4-7-quiz",
+                "title": "Quiz: Struktur Dasar Kode Python Checkpoint",
+                "type": "QUIZ",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 4,
+                "segmentNumber": 7,
+                "lessonTitle": "Struktur Dasar Kode Python",
+                "segmentLabel": "Quiz"
+              },
+              {
+                "id": "step-1-5-1-text",
+                "title": "Core Concepts of Uji Pemahaman",
+                "type": "TEXT",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 5,
+                "segmentNumber": 1,
+                "lessonTitle": "Uji Pemahaman",
+                "segmentLabel": "Core Concepts"
+              },
+              {
+                "id": "step-1-5-2-learning_card",
+                "title": "Learning Cards: Uji Pemahaman Essentials",
+                "type": "LEARNING_CARD",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 5,
+                "segmentNumber": 2,
+                "lessonTitle": "Uji Pemahaman",
+                "segmentLabel": "Learning cards"
+              },
+              {
+                "id": "step-1-5-3-flip_card",
+                "title": "Flashcards: Key Terms in Uji Pemahaman",
+                "type": "FLIP_CARD",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 5,
+                "segmentNumber": 3,
+                "lessonTitle": "Uji Pemahaman",
+                "segmentLabel": "Flashcards"
+              },
+              {
+                "id": "step-1-5-4-video",
+                "title": "Video: Uji Pemahaman Walkthrough",
+                "type": "VIDEO",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 5,
+                "segmentNumber": 4,
+                "lessonTitle": "Uji Pemahaman",
+                "segmentLabel": "Video lesson"
+              },
+              {
+                "id": "step-1-5-5-code_builder",
+                "title": "Interactive Coding: Uji Pemahaman",
+                "type": "CODE_BUILDER",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 5,
+                "segmentNumber": 5,
+                "lessonTitle": "Uji Pemahaman",
+                "segmentLabel": "Interactive coding"
+              },
+              {
+                "id": "step-1-5-6-drag_fill",
+                "title": "Challenge: Apply Uji Pemahaman",
+                "type": "DRAG_FILL",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 5,
+                "segmentNumber": 6,
+                "lessonTitle": "Uji Pemahaman",
+                "segmentLabel": "Gamified challenge"
+              },
+              {
+                "id": "step7",
+                "title": "Quiz: Uji Pemahaman Checkpoint",
+                "type": "QUIZ",
+                "status": "pending",
+                "moduleNumber": 1,
+                "lessonNumber": 5,
+                "segmentNumber": 7,
+                "lessonTitle": "Uji Pemahaman",
+                "segmentLabel": "Quiz"
+              }
+            ],
+            "status": "completed",
+            "isLocked": false,
+            "isCompleted": false
+          },
+          {
+            "id": "module_2",
+            "title": "Struktur Data dalam Python",
+            "description": "Peserta akan mempelajari berbagai struktur data yang ada dalam Python, seperti list, tuple, dan dictionary. Module ini juga mencakup cara menggunakan struktur data ini dalam program.",
+            "facilitation_tips": "Buat kelompok kecil untuk mendiskusikan penggunaan struktur data dalam konteks pengajaran.",
+            "activity": "Buatlah program yang menggunakan list untuk menyimpan nama siswa dan mencetaknya.",
+            "steps": [
+              {
+                "id": "step1",
+                "title": "Core Concepts of Pengenalan Struktur Data",
+                "type": "TEXT",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 1,
+                "segmentNumber": 1,
+                "lessonTitle": "Pengenalan Struktur Data",
+                "segmentLabel": "Core Concepts"
+              },
+              {
+                "id": "step-2-1-2-learning_card",
+                "title": "Learning Cards: Pengenalan Struktur Data Essentials",
+                "type": "LEARNING_CARD",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 1,
+                "segmentNumber": 2,
+                "lessonTitle": "Pengenalan Struktur Data",
+                "segmentLabel": "Learning cards"
+              },
+              {
+                "id": "step-2-1-3-flip_card",
+                "title": "Flashcards: Key Terms in Pengenalan Struktur Data",
+                "type": "FLIP_CARD",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 1,
+                "segmentNumber": 3,
+                "lessonTitle": "Pengenalan Struktur Data",
+                "segmentLabel": "Flashcards"
+              },
+              {
+                "id": "step-2-1-4-video",
+                "title": "Video: Pengenalan Struktur Data Walkthrough",
+                "type": "VIDEO",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 1,
+                "segmentNumber": 4,
+                "lessonTitle": "Pengenalan Struktur Data",
+                "segmentLabel": "Video lesson"
+              },
+              {
+                "id": "step-2-1-5-code_builder",
+                "title": "Interactive Coding: Pengenalan Struktur Data",
+                "type": "CODE_BUILDER",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 1,
+                "segmentNumber": 5,
+                "lessonTitle": "Pengenalan Struktur Data",
+                "segmentLabel": "Interactive coding"
+              },
+              {
+                "id": "step-2-1-6-drag_fill",
+                "title": "Challenge: Apply Pengenalan Struktur Data",
+                "type": "DRAG_FILL",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 1,
+                "segmentNumber": 6,
+                "lessonTitle": "Pengenalan Struktur Data",
+                "segmentLabel": "Gamified challenge"
+              },
+              {
+                "id": "step-2-1-7-quiz",
+                "title": "Quiz: Pengenalan Struktur Data Checkpoint",
+                "type": "QUIZ",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 1,
+                "segmentNumber": 7,
+                "lessonTitle": "Pengenalan Struktur Data",
+                "segmentLabel": "Quiz"
+              },
+              {
+                "id": "step2",
+                "title": "Core Concepts of Struktur Data dalam Python in Practice",
+                "type": "TEXT",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 2,
+                "segmentNumber": 1,
+                "lessonTitle": "Struktur Data dalam Python in Practice",
+                "segmentLabel": "Core Concepts"
+              },
+              {
+                "id": "step-2-2-2-learning_card",
+                "title": "Learning Cards: Struktur Data dalam Python in Practice Essentials",
+                "type": "LEARNING_CARD",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 2,
+                "segmentNumber": 2,
+                "lessonTitle": "Struktur Data dalam Python in Practice",
+                "segmentLabel": "Learning cards"
+              },
+              {
+                "id": "step3",
+                "title": "Flashcards: Key Terms in Struktur Data dalam Python in Practice",
+                "type": "FLIP_CARD",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 2,
+                "segmentNumber": 3,
+                "lessonTitle": "Struktur Data dalam Python in Practice",
+                "segmentLabel": "Flashcards"
+              },
+              {
+                "id": "step4",
+                "title": "Video: Struktur Data dalam Python in Practice Walkthrough",
+                "type": "VIDEO",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 2,
+                "segmentNumber": 4,
+                "lessonTitle": "Struktur Data dalam Python in Practice",
+                "segmentLabel": "Video lesson"
+              },
+              {
+                "id": "step5",
+                "title": "Interactive Coding: Struktur Data dalam Python in Practice",
+                "type": "CODE_BUILDER",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 2,
+                "segmentNumber": 5,
+                "lessonTitle": "Struktur Data dalam Python in Practice",
+                "segmentLabel": "Interactive coding"
+              },
+              {
+                "id": "step-2-2-6-drag_fill",
+                "title": "Challenge: Apply Struktur Data dalam Python in Practice",
+                "type": "DRAG_FILL",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 2,
+                "segmentNumber": 6,
+                "lessonTitle": "Struktur Data dalam Python in Practice",
+                "segmentLabel": "Gamified challenge"
+              },
+              {
+                "id": "step-2-2-7-quiz",
+                "title": "Quiz: Struktur Data dalam Python in Practice Checkpoint",
+                "type": "QUIZ",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 2,
+                "segmentNumber": 7,
+                "lessonTitle": "Struktur Data dalam Python in Practice",
+                "segmentLabel": "Quiz"
+              },
+              {
+                "id": "step-2-3-1-text",
+                "title": "Core Concepts of Tantangan",
+                "type": "TEXT",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 3,
+                "segmentNumber": 1,
+                "lessonTitle": "Tantangan",
+                "segmentLabel": "Core Concepts"
+              },
+              {
+                "id": "step-2-3-2-learning_card",
+                "title": "Learning Cards: Tantangan Essentials",
+                "type": "LEARNING_CARD",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 3,
+                "segmentNumber": 2,
+                "lessonTitle": "Tantangan",
+                "segmentLabel": "Learning cards"
+              },
+              {
+                "id": "step-2-3-3-flip_card",
+                "title": "Flashcards: Key Terms in Tantangan",
+                "type": "FLIP_CARD",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 3,
+                "segmentNumber": 3,
+                "lessonTitle": "Tantangan",
+                "segmentLabel": "Flashcards"
+              },
+              {
+                "id": "step-2-3-4-video",
+                "title": "Video: Tantangan Walkthrough",
+                "type": "VIDEO",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 3,
+                "segmentNumber": 4,
+                "lessonTitle": "Tantangan",
+                "segmentLabel": "Video lesson"
+              },
+              {
+                "id": "step-2-3-5-code_builder",
+                "title": "Interactive Coding: Tantangan",
+                "type": "CODE_BUILDER",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 3,
+                "segmentNumber": 5,
+                "lessonTitle": "Tantangan",
+                "segmentLabel": "Interactive coding"
+              },
+              {
+                "id": "step6",
+                "title": "Challenge: Apply Tantangan",
+                "type": "DRAG_FILL",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 3,
+                "segmentNumber": 6,
+                "lessonTitle": "Tantangan",
+                "segmentLabel": "Gamified challenge"
+              },
+              {
+                "id": "step-2-3-7-quiz",
+                "title": "Quiz: Tantangan Checkpoint",
+                "type": "QUIZ",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 3,
+                "segmentNumber": 7,
+                "lessonTitle": "Tantangan",
+                "segmentLabel": "Quiz"
+              },
+              {
+                "id": "step-2-4-1-text",
+                "title": "Core Concepts of Uji Pemahaman",
+                "type": "TEXT",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 4,
+                "segmentNumber": 1,
+                "lessonTitle": "Uji Pemahaman",
+                "segmentLabel": "Core Concepts"
+              },
+              {
+                "id": "step-2-4-2-learning_card",
+                "title": "Learning Cards: Uji Pemahaman Essentials",
+                "type": "LEARNING_CARD",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 4,
+                "segmentNumber": 2,
+                "lessonTitle": "Uji Pemahaman",
+                "segmentLabel": "Learning cards"
+              },
+              {
+                "id": "step-2-4-3-flip_card",
+                "title": "Flashcards: Key Terms in Uji Pemahaman",
+                "type": "FLIP_CARD",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 4,
+                "segmentNumber": 3,
+                "lessonTitle": "Uji Pemahaman",
+                "segmentLabel": "Flashcards"
+              },
+              {
+                "id": "step-2-4-4-video",
+                "title": "Video: Uji Pemahaman Walkthrough",
+                "type": "VIDEO",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 4,
+                "segmentNumber": 4,
+                "lessonTitle": "Uji Pemahaman",
+                "segmentLabel": "Video lesson"
+              },
+              {
+                "id": "step-2-4-5-code_builder",
+                "title": "Interactive Coding: Uji Pemahaman",
+                "type": "CODE_BUILDER",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 4,
+                "segmentNumber": 5,
+                "lessonTitle": "Uji Pemahaman",
+                "segmentLabel": "Interactive coding"
+              },
+              {
+                "id": "step-2-4-6-drag_fill",
+                "title": "Challenge: Apply Uji Pemahaman",
+                "type": "DRAG_FILL",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 4,
+                "segmentNumber": 6,
+                "lessonTitle": "Uji Pemahaman",
+                "segmentLabel": "Gamified challenge"
+              },
+              {
+                "id": "step7",
+                "title": "Quiz: Uji Pemahaman Checkpoint",
+                "type": "QUIZ",
+                "status": "pending",
+                "moduleNumber": 2,
+                "lessonNumber": 4,
+                "segmentNumber": 7,
+                "lessonTitle": "Uji Pemahaman",
+                "segmentLabel": "Quiz"
+              }
+            ],
+            "status": "completed",
+            "isLocked": true,
+            "isCompleted": false
+          },
+          {
+            "id": "module_3",
+            "title": "Kontrol Alur dan Fungsi",
+            "description": "Module ini membahas kontrol alur menggunakan pernyataan kondisi dan loop. Peserta juga akan belajar cara mendefinisikan dan menggunakan fungsi dalam Python.",
+            "facilitation_tips": "Ajak peserta untuk menyelesaikan masalah logika menggunakan kontrol alur. Diskusikan solusi secara kelompok.",
+            "activity": "Buat fungsi yang menerima dua angka dan mengembalikan jumlahnya.",
+            "steps": [
+              {
+                "id": "step1",
+                "title": "Core Concepts of Foundations of Kontrol Alur dan Fungsi",
+                "type": "TEXT",
+                "status": "pending",
+                "moduleNumber": 3,
+                "lessonNumber": 1,
+                "segmentNumber": 1,
+                "lessonTitle": "Foundations of Kontrol Alur dan Fungsi",
+                "segmentLabel": "Core Concepts"
+              },
+              {
+                "id": "step-3-1-2-learning_card",
+                "title": "Learning Cards: Foundations of Kontrol Alur dan Fungsi Essentials",
+                "type": "LEARNING_CARD",
+                "status": "pending",
+                "moduleNumber": 3,
+                "lessonNumber": 1,
+                "segmentNumber": 2,
+                "lessonTitle": "Foundations of Kontrol Alur dan Fungsi",
+                "segmentLabel": "Learning cards"
+              },
+              {
+                "id": "step-3-1-3-flip_card",
+                "title": "Flashcards: Key Terms in Foundations of Kontrol Alur dan Fungsi",
+                "type": "FLIP_CARD",
+                "status": "pending",
+                "moduleNumber": 3,
+                "lessonNumber": 1,
+                "segmentNumber": 3,
+                "lessonTitle": "Foundations of Kontrol Alur dan Fungsi",
+                "segmentLabel": "Flashcards"
+              },
+              {
+                "id": "step-3-1-4-video",
+                "title": "Video: Foundations of Kontrol Alur dan Fungsi Walkthrough",
+                "type": "VIDEO",
+                "status": "pending",
+                "moduleNumber": 3,
+                "lessonNumber": 1,
+                "segmentNumber": 4,
+                "lessonTitle": "Foundations of Kontrol Alur dan Fungsi",
+                "segmentLabel": "Video lesson"
+              },
+              {
+                "id": "step-3-1-5-code_builder",
+                "title": "Interactive Coding: Foundations of Kontrol Alur dan Fungsi",
+                "type": "CODE_BUILDER",
+                "status": "pending",
+                "moduleNumber": 3,
+                "lessonNumber": 1,
+                "segmentNumber": 5,
+                "lessonTitle": "Foundations of Kontrol Alur dan Fungsi",
+                "segmentLabel": "Interactive coding"
+              },
+              {
+                "id": "step-3-1-6-drag_fill",
+                "title": "Challenge: Apply Foundations of Kontrol Alur dan Fungsi",
+                "type": "DRAG_FILL",
+                "status": "pending",
+                "moduleNumber": 3,
+                "lessonNumber": 1,
+                "segmentNumber": 6,
+                "lessonTitle": "Foundations of Kontrol Alur dan Fungsi",
+                "segmentLabel": "Gamified challenge"
+              },
+              {
+                "id": "step-3-1-7-quiz",
+                "title": "Quiz: Foundations of Kontrol Alur dan Fungsi Checkpoint",
+                "type": "QUIZ",
+                "status": "pending",
+                "moduleNumber": 3,
+                "lessonNumber": 1,
+                "segmentNumber": 7,
+                "lessonTitle": "Foundations of Kontrol Alur dan Fungsi",
+                "segmentLabel": "Quiz"
+              },
+              {
+                "id": "step2",
+                "title": "Core Concepts of Kontrol Alur dan Fungsi in Practice",
+                "type": "TEXT",
+                "status": "pending",
+                "moduleNumber": 3,
+                "lessonNumber": 2,
+                "segmentNumber": 1,
+                "lessonTitle": "Kontrol Alur dan Fungsi in Practice",
+                "segmentLabel": "Core Concepts"
+              },
+              {
+                "id": "step-3-2-2-learning_card",
+                "title": "Learning Cards: Kontrol Alur dan Fungsi in Practice Essentials",
+                "type": "LEARNING_CARD",
+                "status": "pending",
+                "moduleNumber": 3,
+                "lessonNumber": 2,
+                "segmentNumber": 2,
+                "lessonTitle": "Kontrol Alur dan Fungsi in Practice",
+                "segmentLabel": "Learning cards"
+              },
+              {
+                "id": "step3",
+                "title": "Flashcards: Key Terms in Kontrol Alur dan Fungsi in Practice",
+                "type": "FLIP_CARD",
+                "status": "pending",
+                "moduleNumber": 3,
+                "lessonNumber": 2,
+                "segmentNumber": 3,
+                "lessonTitle": "Kontrol Alur dan Fungsi in Practice",
+                "segmentLabel": "Flashcards"
+              },
+              {
+                "id": "step4",
+                "title": "Video: Kontrol Alur dan Fungsi in Practice Walkthrough",
+                "type": "VIDEO",
+                "status": "pending",
+                "moduleNumber": 3,
+                "lessonNumber": 2,
+                "segmentNumber": 4,
+                "lessonTitle": "Kontrol Alur dan Fungsi in Practice",
+                "segmentLabel": "Video lesson"
+              },
+              {
+                "id": "step-3-2-5-code_builder",
+                "title": "Interactive Coding: Kontrol Alur dan Fungsi in Practice",
+                "type": "CODE_BUILDER",
+                "status": "pending",
+                "moduleNumber": 3,
+                "lessonNumber": 2,
+                "segmentNumber": 5,
+                "lessonTitle": "Kontrol Alur dan Fungsi in Practice",
+                "segmentLabel": "Interactive coding"
+              },
+              {
+                "id": "step5",
+                "title": "Challenge: Apply Kontrol Alur dan Fungsi in Practice",
+                "type": "DRAG_FILL",
+                "status": "pending",
+                "moduleNumber": 3,
+                "lessonNumber": 2,
+                "segmentNumber": 6,
+                "lessonTitle": "Kontrol Alur dan Fungsi in Practice",
+                "segmentLabel": "Gamified challenge"
+              },
+              {
+                "id": "step7",
+                "title": "Quiz: Kontrol Alur dan Fungsi in Practice Checkpoint",
+                "type": "QUIZ",
+                "status": "pending",
+                "moduleNumber": 3,
+                "lessonNumber": 2,
+                "segmentNumber": 7,
+                "lessonTitle": "Kontrol Alur dan Fungsi in Practice",
+                "segmentLabel": "Quiz"
+              },
+              {
+                "id": "step6",
+                "title": "Kontrol Alur dan Fungsi in Practice: Menyelesaikan Tantangan Drag & Fill pada Fungsi",
+                "type": "DRAG_FILL",
+                "status": "pending",
+                "moduleNumber": 3,
+                "lessonNumber": 2,
+                "segmentNumber": 8,
+                "lessonTitle": "Kontrol Alur dan Fungsi in Practice",
+                "segmentLabel": "Gamified challenge"
+              }
+            ],
+            "status": "completed",
+            "isLocked": true,
+            "isCompleted": false
+          },
+          {
+            "id": "module_4",
+            "title": "Proyek Akhir: Aplikasi Python Sederhana",
+            "description": "Peserta akan menerapkan semua yang telah dipelajari untuk membuat aplikasi Python sederhana. Ini dapat berupa kalkulator, permainan teks, atau aplikasi lain yang relevan untuk pendidikan.",
+            "facilitation_tips": "Berikan waktu yang cukup untuk brainstorming dan pengembangan proyek. Dorong kolaborasi antar peserta.",
+            "activity": "Rencanakan dan buat aplikasi Python sederhana yang dapat digunakan dalam konteks kelas.",
+            "steps": [
+              {
+                "id": "step1",
+                "title": "Core Concepts of Foundations of Proyek Akhir: Aplikasi Python Sederhana",
+                "type": "TEXT",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 1,
+                "segmentNumber": 1,
+                "lessonTitle": "Foundations of Proyek Akhir: Aplikasi Python Sederhana",
+                "segmentLabel": "Core Concepts"
+              },
+              {
+                "id": "step-4-1-2-learning_card",
+                "title": "Learning Cards: Foundations of Proyek Akhir: Aplikasi Python Sederhana Essentials",
+                "type": "LEARNING_CARD",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 1,
+                "segmentNumber": 2,
+                "lessonTitle": "Foundations of Proyek Akhir: Aplikasi Python Sederhana",
+                "segmentLabel": "Learning cards"
+              },
+              {
+                "id": "step-4-1-3-flip_card",
+                "title": "Flashcards: Key Terms in Foundations of Proyek Akhir: Aplikasi Python Sederhana",
+                "type": "FLIP_CARD",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 1,
+                "segmentNumber": 3,
+                "lessonTitle": "Foundations of Proyek Akhir: Aplikasi Python Sederhana",
+                "segmentLabel": "Flashcards"
+              },
+              {
+                "id": "step-4-1-4-video",
+                "title": "Video: Foundations of Proyek Akhir: Aplikasi Python Sederhana Walkthrough",
+                "type": "VIDEO",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 1,
+                "segmentNumber": 4,
+                "lessonTitle": "Foundations of Proyek Akhir: Aplikasi Python Sederhana",
+                "segmentLabel": "Video lesson"
+              },
+              {
+                "id": "step-4-1-5-code_builder",
+                "title": "Interactive Coding: Foundations of Proyek Akhir: Aplikasi Python Sederhana",
+                "type": "CODE_BUILDER",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 1,
+                "segmentNumber": 5,
+                "lessonTitle": "Foundations of Proyek Akhir: Aplikasi Python Sederhana",
+                "segmentLabel": "Interactive coding"
+              },
+              {
+                "id": "step-4-1-6-drag_fill",
+                "title": "Challenge: Apply Foundations of Proyek Akhir: Aplikasi Python Sederhana",
+                "type": "DRAG_FILL",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 1,
+                "segmentNumber": 6,
+                "lessonTitle": "Foundations of Proyek Akhir: Aplikasi Python Sederhana",
+                "segmentLabel": "Gamified challenge"
+              },
+              {
+                "id": "step-4-1-7-quiz",
+                "title": "Quiz: Foundations of Proyek Akhir: Aplikasi Python Sederhana Checkpoint",
+                "type": "QUIZ",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 1,
+                "segmentNumber": 7,
+                "lessonTitle": "Foundations of Proyek Akhir: Aplikasi Python Sederhana",
+                "segmentLabel": "Quiz"
+              },
+              {
+                "id": "step2",
+                "title": "Core Concepts of Menentukan Ide Aplikasi",
+                "type": "TEXT",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 2,
+                "segmentNumber": 1,
+                "lessonTitle": "Menentukan Ide Aplikasi",
+                "segmentLabel": "Core Concepts"
+              },
+              {
+                "id": "step-4-2-2-learning_card",
+                "title": "Learning Cards: Menentukan Ide Aplikasi Essentials",
+                "type": "LEARNING_CARD",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 2,
+                "segmentNumber": 2,
+                "lessonTitle": "Menentukan Ide Aplikasi",
+                "segmentLabel": "Learning cards"
+              },
+              {
+                "id": "step-4-2-3-flip_card",
+                "title": "Flashcards: Key Terms in Menentukan Ide Aplikasi",
+                "type": "FLIP_CARD",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 2,
+                "segmentNumber": 3,
+                "lessonTitle": "Menentukan Ide Aplikasi",
+                "segmentLabel": "Flashcards"
+              },
+              {
+                "id": "step-4-2-4-video",
+                "title": "Video: Menentukan Ide Aplikasi Walkthrough",
+                "type": "VIDEO",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 2,
+                "segmentNumber": 4,
+                "lessonTitle": "Menentukan Ide Aplikasi",
+                "segmentLabel": "Video lesson"
+              },
+              {
+                "id": "step-4-2-5-code_builder",
+                "title": "Interactive Coding: Menentukan Ide Aplikasi",
+                "type": "CODE_BUILDER",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 2,
+                "segmentNumber": 5,
+                "lessonTitle": "Menentukan Ide Aplikasi",
+                "segmentLabel": "Interactive coding"
+              },
+              {
+                "id": "step-4-2-6-drag_fill",
+                "title": "Challenge: Apply Menentukan Ide Aplikasi",
+                "type": "DRAG_FILL",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 2,
+                "segmentNumber": 6,
+                "lessonTitle": "Menentukan Ide Aplikasi",
+                "segmentLabel": "Gamified challenge"
+              },
+              {
+                "id": "step-4-2-7-quiz",
+                "title": "Quiz: Menentukan Ide Aplikasi Checkpoint",
+                "type": "QUIZ",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 2,
+                "segmentNumber": 7,
+                "lessonTitle": "Menentukan Ide Aplikasi",
+                "segmentLabel": "Quiz"
+              },
+              {
+                "id": "step-4-3-1-text",
+                "title": "Core Concepts of Fitur Utama Aplikasi",
+                "type": "TEXT",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 3,
+                "segmentNumber": 1,
+                "lessonTitle": "Fitur Utama Aplikasi",
+                "segmentLabel": "Core Concepts"
+              },
+              {
+                "id": "step-4-3-2-learning_card",
+                "title": "Learning Cards: Fitur Utama Aplikasi Essentials",
+                "type": "LEARNING_CARD",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 3,
+                "segmentNumber": 2,
+                "lessonTitle": "Fitur Utama Aplikasi",
+                "segmentLabel": "Learning cards"
+              },
+              {
+                "id": "step3",
+                "title": "Flashcards: Key Terms in Fitur Utama Aplikasi",
+                "type": "FLIP_CARD",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 3,
+                "segmentNumber": 3,
+                "lessonTitle": "Fitur Utama Aplikasi",
+                "segmentLabel": "Flashcards"
+              },
+              {
+                "id": "step4",
+                "title": "Video: Fitur Utama Aplikasi Walkthrough",
+                "type": "VIDEO",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 3,
+                "segmentNumber": 4,
+                "lessonTitle": "Fitur Utama Aplikasi",
+                "segmentLabel": "Video lesson"
+              },
+              {
+                "id": "step5",
+                "title": "Interactive Coding: Fitur Utama Aplikasi",
+                "type": "CODE_BUILDER",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 3,
+                "segmentNumber": 5,
+                "lessonTitle": "Fitur Utama Aplikasi",
+                "segmentLabel": "Interactive coding"
+              },
+              {
+                "id": "step-4-3-6-drag_fill",
+                "title": "Challenge: Apply Fitur Utama Aplikasi",
+                "type": "DRAG_FILL",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 3,
+                "segmentNumber": 6,
+                "lessonTitle": "Fitur Utama Aplikasi",
+                "segmentLabel": "Gamified challenge"
+              },
+              {
+                "id": "step-4-3-7-quiz",
+                "title": "Quiz: Fitur Utama Aplikasi Checkpoint",
+                "type": "QUIZ",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 3,
+                "segmentNumber": 7,
+                "lessonTitle": "Fitur Utama Aplikasi",
+                "segmentLabel": "Quiz"
+              },
+              {
+                "id": "step-4-4-1-text",
+                "title": "Core Concepts of Tantangan",
+                "type": "TEXT",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 4,
+                "segmentNumber": 1,
+                "lessonTitle": "Tantangan",
+                "segmentLabel": "Core Concepts"
+              },
+              {
+                "id": "step-4-4-2-learning_card",
+                "title": "Learning Cards: Tantangan Essentials",
+                "type": "LEARNING_CARD",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 4,
+                "segmentNumber": 2,
+                "lessonTitle": "Tantangan",
+                "segmentLabel": "Learning cards"
+              },
+              {
+                "id": "step-4-4-3-flip_card",
+                "title": "Flashcards: Key Terms in Tantangan",
+                "type": "FLIP_CARD",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 4,
+                "segmentNumber": 3,
+                "lessonTitle": "Tantangan",
+                "segmentLabel": "Flashcards"
+              },
+              {
+                "id": "step-4-4-4-video",
+                "title": "Video: Tantangan Walkthrough",
+                "type": "VIDEO",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 4,
+                "segmentNumber": 4,
+                "lessonTitle": "Tantangan",
+                "segmentLabel": "Video lesson"
+              },
+              {
+                "id": "step-4-4-5-code_builder",
+                "title": "Interactive Coding: Tantangan",
+                "type": "CODE_BUILDER",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 4,
+                "segmentNumber": 5,
+                "lessonTitle": "Tantangan",
+                "segmentLabel": "Interactive coding"
+              },
+              {
+                "id": "step6",
+                "title": "Challenge: Apply Tantangan",
+                "type": "DRAG_FILL",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 4,
+                "segmentNumber": 6,
+                "lessonTitle": "Tantangan",
+                "segmentLabel": "Gamified challenge"
+              },
+              {
+                "id": "step-4-4-7-quiz",
+                "title": "Quiz: Tantangan Checkpoint",
+                "type": "QUIZ",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 4,
+                "segmentNumber": 7,
+                "lessonTitle": "Tantangan",
+                "segmentLabel": "Quiz"
+              },
+              {
+                "id": "step-4-5-1-text",
+                "title": "Core Concepts of Uji Pemahaman",
+                "type": "TEXT",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 5,
+                "segmentNumber": 1,
+                "lessonTitle": "Uji Pemahaman",
+                "segmentLabel": "Core Concepts"
+              },
+              {
+                "id": "step-4-5-2-learning_card",
+                "title": "Learning Cards: Uji Pemahaman Essentials",
+                "type": "LEARNING_CARD",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 5,
+                "segmentNumber": 2,
+                "lessonTitle": "Uji Pemahaman",
+                "segmentLabel": "Learning cards"
+              },
+              {
+                "id": "step-4-5-3-flip_card",
+                "title": "Flashcards: Key Terms in Uji Pemahaman",
+                "type": "FLIP_CARD",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 5,
+                "segmentNumber": 3,
+                "lessonTitle": "Uji Pemahaman",
+                "segmentLabel": "Flashcards"
+              },
+              {
+                "id": "step-4-5-4-video",
+                "title": "Video: Uji Pemahaman Walkthrough",
+                "type": "VIDEO",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 5,
+                "segmentNumber": 4,
+                "lessonTitle": "Uji Pemahaman",
+                "segmentLabel": "Video lesson"
+              },
+              {
+                "id": "step-4-5-5-code_builder",
+                "title": "Interactive Coding: Uji Pemahaman",
+                "type": "CODE_BUILDER",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 5,
+                "segmentNumber": 5,
+                "lessonTitle": "Uji Pemahaman",
+                "segmentLabel": "Interactive coding"
+              },
+              {
+                "id": "step-4-5-6-drag_fill",
+                "title": "Challenge: Apply Uji Pemahaman",
+                "type": "DRAG_FILL",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 5,
+                "segmentNumber": 6,
+                "lessonTitle": "Uji Pemahaman",
+                "segmentLabel": "Gamified challenge"
+              },
+              {
+                "id": "step7",
+                "title": "Quiz: Uji Pemahaman Checkpoint",
+                "type": "QUIZ",
+                "status": "pending",
+                "moduleNumber": 4,
+                "lessonNumber": 5,
+                "segmentNumber": 7,
+                "lessonTitle": "Uji Pemahaman",
+                "segmentLabel": "Quiz"
+              }
+            ],
+            "status": "completed",
+            "isLocked": true,
+            "isCompleted": false
+          }
+        ]
+      },
+      "language": "en",
+      "segment": "youth",
+      "visibility": "private",
+      "moderationStatus": "clean",
+      "reactions": 10,
+      "comments": 8,
+      "saves": 0,
+      "createdAt": "2026-03-03T21:58:24.169Z"
+    }
+  ],
+  "reactions": [
+    {
+      "id": "rea-1772575248033-pldkjd",
+      "postId": "pub-1772575104169-so3qee",
+      "accountId": "local-qqfyf9w9",
+      "reaction": "like",
+      "createdAt": "2026-03-03T22:00:48.033Z"
+    },
+    {
+      "id": "rea-1772575249357-lqhg7x",
+      "postId": "pub-1772575104169-so3qee",
+      "accountId": "local-qqfyf9w9",
+      "reaction": "like",
+      "createdAt": "2026-03-03T22:00:49.357Z"
+    },
+    {
+      "id": "rea-1772575250099-p4h985",
+      "postId": "pub-1772575104169-so3qee",
+      "accountId": "local-qqfyf9w9",
+      "reaction": "like",
+      "createdAt": "2026-03-03T22:00:50.099Z"
+    },
+    {
+      "id": "rea-1772575250241-0rc7li",
+      "postId": "pub-1772575104169-so3qee",
+      "accountId": "local-qqfyf9w9",
+      "reaction": "like",
+      "createdAt": "2026-03-03T22:00:50.241Z"
+    },
+    {
+      "id": "rea-1772575250421-ky6efi",
+      "postId": "pub-1772575104169-so3qee",
+      "accountId": "local-qqfyf9w9",
+      "reaction": "like",
+      "createdAt": "2026-03-03T22:00:50.421Z"
+    },
+    {
+      "id": "rea-1772575250601-um5t47",
+      "postId": "pub-1772575104169-so3qee",
+      "accountId": "local-qqfyf9w9",
+      "reaction": "like",
+      "createdAt": "2026-03-03T22:00:50.601Z"
+    },
+    {
+      "id": "rea-1772575250762-77hcl9",
+      "postId": "pub-1772575104169-so3qee",
+      "accountId": "local-qqfyf9w9",
+      "reaction": "like",
+      "createdAt": "2026-03-03T22:00:50.762Z"
+    },
+    {
+      "id": "rea-1772575250945-3p0h7t",
+      "postId": "pub-1772575104169-so3qee",
+      "accountId": "local-qqfyf9w9",
+      "reaction": "like",
+      "createdAt": "2026-03-03T22:00:50.945Z"
+    },
+    {
+      "id": "rea-1772575251112-y75wsq",
+      "postId": "pub-1772575104169-so3qee",
+      "accountId": "local-qqfyf9w9",
+      "reaction": "like",
+      "createdAt": "2026-03-03T22:00:51.112Z"
+    },
+    {
+      "id": "rea-1772575251281-lonizr",
+      "postId": "pub-1772575104169-so3qee",
+      "accountId": "local-qqfyf9w9",
+      "reaction": "like",
+      "createdAt": "2026-03-03T22:00:51.281Z"
+    }
+  ],
+  "comments": [
+    {
+      "id": "com-1772575276844-evm0bh",
+      "postId": "pub-1772575104169-so3qee",
+      "accountId": "local-qqfyf9w9",
+      "text": "hi",
+      "createdAt": "2026-03-03T22:01:16.844Z"
+    },
+    {
+      "id": "com-1772575279723-bjt5bs",
+      "postId": "pub-1772575104169-so3qee",
+      "accountId": "local-qqfyf9w9",
+      "text": "j",
+      "createdAt": "2026-03-03T22:01:19.723Z"
+    },
+    {
+      "id": "com-1772575281609-ga5gnf",
+      "postId": "pub-1772575104169-so3qee",
+      "accountId": "local-qqfyf9w9",
+      "text": "w",
+      "createdAt": "2026-03-03T22:01:21.609Z"
+    },
+    {
+      "id": "com-1772575282771-mvfuy5",
+      "postId": "pub-1772575104169-so3qee",
+      "accountId": "local-qqfyf9w9",
+      "text": "w",
+      "createdAt": "2026-03-03T22:01:22.771Z"
+    },
+    {
+      "id": "com-1772575283760-yupf2i",
+      "postId": "pub-1772575104169-so3qee",
+      "accountId": "local-qqfyf9w9",
+      "text": "w",
+      "createdAt": "2026-03-03T22:01:23.760Z"
+    },
+    {
+      "id": "com-1772575285502-fav0us",
+      "postId": "pub-1772575104169-so3qee",
+      "accountId": "local-qqfyf9w9",
+      "text": "w",
+      "createdAt": "2026-03-03T22:01:25.502Z"
+    },
+    {
+      "id": "com-1772575292158-tuumsv",
+      "postId": "pub-1772575104169-so3qee",
+      "accountId": "local-qqfyf9w9",
+      "text": "wwwwwwwwwwwwww",
+      "createdAt": "2026-03-03T22:01:32.158Z"
+    },
+    {
+      "id": "com-1772575294209-2wtc58",
+      "postId": "pub-1772575104169-so3qee",
+      "accountId": "local-qqfyf9w9",
+      "text": "wwwwwwwwwww",
+      "createdAt": "2026-03-03T22:01:34.209Z"
+    }
+  ],
+  "reports": [],
+  "cohorts": [
+    {
+      "id": "coh-1772543922883-c3yz1w",
+      "name": "hi",
+      "ownerId": "local-o0ebsdj8",
+      "courseId": "course:Python for Beginners",
+      "createdAt": "2026-03-03T13:18:42.883Z"
+    }
+  ],
+  "cohortMembers": [
+    {
+      "id": "cohmem-1772543922883-pv3b7m",
+      "cohortId": "coh-1772543922883-c3yz1w",
+      "accountId": "local-o0ebsdj8",
+      "role": "owner",
+      "createdAt": "2026-03-03T13:18:42.883Z"
+    }
+  ]
+}

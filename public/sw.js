@@ -30,6 +30,7 @@ self.addEventListener('fetch', (event) => {
 
   // Never cache API calls
   if (url.pathname.startsWith('/api/')) return;
+  if (event.request.method !== 'GET') return;
 
   event.respondWith(
     caches.match(event.request).then((cached) => {
@@ -43,7 +44,13 @@ self.addEventListener('fetch', (event) => {
           }
           return res;
         })
-        .catch(() => cached || caches.match('/index.html'));
+        .catch(() => {
+          // App-shell fallback is only valid for navigation requests.
+          if (event.request.mode === 'navigate') {
+            return caches.match('/index.html');
+          }
+          return cached || Response.error();
+        });
     })
   );
 });

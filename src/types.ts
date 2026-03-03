@@ -85,6 +85,86 @@ export interface AssessmentQuestion {
   options?: string[];
 }
 
+export type UserSegment = 'youth' | 'educator' | 'displaced' | 'community_org';
+export type ConnectivityLevel = 'offline_first' | 'low_bandwidth' | 'normal';
+export type CourseVisibility = 'private' | 'public';
+export type ModerationStatus = 'clean' | 'under_review' | 'flagged' | 'hidden';
+export type SupportedLocale = 'en' | 'my' | 'id' | 'ms' | 'th' | 'vi' | 'tl' | 'km' | 'lo';
+
+export interface UserProfile {
+  id: string;
+  email?: string;
+  userSegment: UserSegment;
+  connectivityLevel: ConnectivityLevel;
+  learningGoal: string;
+  preferredLanguage: SupportedLocale;
+  region: string;
+  discoverySource?: 'social_media' | 'friend' | 'school' | 'community' | 'other';
+  deviceClass: 'mobile' | 'desktop' | 'tablet' | 'unknown';
+  lowBandwidthMode?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ImpactMetrics {
+  usersReached: number;
+  skillGainPp: number;
+  confidenceGain: number;
+  completionRate: number;
+  avgTimeToCompletionMins: number;
+  d7Retention: number;
+}
+
+export interface SyncQueueItem {
+  id: string;
+  courseId: string;
+  type: 'course_started' | 'lesson_started' | 'lesson_completed' | 'quiz_submitted' | 'course_completed' | 'daily_active';
+  payload?: Record<string, any>;
+  createdAt: string;
+}
+
+export interface DownloadState {
+  courseId: string;
+  snapshotVersion: number;
+  downloadedAt: string;
+  sizeBytes: number;
+  title: string;
+}
+
+export interface PublicCoursePost {
+  id: string;
+  courseId: string;
+  ownerId: string;
+  title: string;
+  description?: string;
+  snapshot?: Course;
+  language?: SupportedLocale;
+  segment?: UserSegment;
+  visibility: CourseVisibility;
+  moderationStatus: ModerationStatus;
+  reactions: number;
+  comments: number;
+  saves: number;
+  createdAt: string;
+}
+
+export interface Cohort {
+  id: string;
+  name: string;
+  ownerId: string;
+  courseId: string;
+  createdAt: string;
+}
+
+export interface AbuseReport {
+  id: string;
+  targetType: 'course' | 'comment';
+  targetId: string;
+  reason: string;
+  reporterId: string;
+  createdAt: string;
+}
+
 export type RouterConfig = {
   mode: 'auto' | 'manual';
   provider: 'auto' | 'gemini' | 'openai' | 'anthropic' | 'openrouter';
@@ -92,3 +172,12 @@ export type RouterConfig = {
   // Optional, mostly for Gemini rotation
   modelCandidates?: string[];
 };
+
+export interface ProfileContext {
+  userSegment: UserSegment;
+  connectivityLevel: ConnectivityLevel;
+  preferredLanguage: SupportedLocale;
+  learningGoal?: string;
+  region?: string;
+  lowBandwidthMode?: boolean;
+}

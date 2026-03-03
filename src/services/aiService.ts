@@ -3,7 +3,13 @@ import {
   Course,
   ModuleContent,
   ContentType,
-  RouterConfig
+  RouterConfig,
+  UserProfile,
+  ImpactMetrics,
+  SyncQueueItem,
+  PublicCoursePost,
+  Cohort,
+  ProfileContext,
 } from "../types";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -13,6 +19,49 @@ const DEFAULT_GEMINI_CANDIDATES = [
   'gemini-1.5-flash',
   'gemini-1.5-pro'
 ];
+
+const DEFAULT_PROFILE_CONTEXT: ProfileContext = {
+  userSegment: 'youth',
+  connectivityLevel: 'normal',
+  preferredLanguage: 'en',
+  learningGoal: '',
+  region: 'ASEAN',
+  lowBandwidthMode: false,
+};
+
+const getProfileContext = (): ProfileContext => {
+  try {
+    const raw = localStorage.getItem('nexus_profile_context');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        userSegment: parsed.userSegment || 'youth',
+        connectivityLevel: parsed.connectivityLevel || 'normal',
+        preferredLanguage: parsed.preferredLanguage || 'en',
+        learningGoal: parsed.learningGoal || '',
+        region: parsed.region || 'ASEAN',
+        lowBandwidthMode: !!parsed.lowBandwidthMode,
+      };
+    }
+  } catch {
+    // ignore
+  }
+  return DEFAULT_PROFILE_CONTEXT;
+};
+
+const getAccountId = (): string => {
+  try {
+    const key = 'nexus_account_id';
+    let id = localStorage.getItem(key);
+    if (!id) {
+      id = `local-${Math.random().toString(36).slice(2, 10)}`;
+      localStorage.setItem(key, id);
+    }
+    return id;
+  } catch {
+    return 'local-anon';
+  }
+};
 
 const getRouterConfig = (): RouterConfig => {
   try {
@@ -111,7 +160,12 @@ const withClientRetry = async <T>(
 
 async function postApi<T>(path: string, body: any): Promise<T> {
   const router = getRouterConfig();
-  const payload = { ...body, router };
+  const profileContext = getProfileContext();
+  const accountId = getAccountId();
+  const isAiPath = path.startsWith('/api/generate/') || path.startsWith('/api/tutor/');
+  const payload = isAiPath
+    ? { ...body, router, profileContext, accountId }
+    : { ...body, accountId };
 
   const r = await fetchJsonWithTimeout(path, {
     method: 'POST',
@@ -204,5 +258,138 @@ export const aiService = {
     return withClientRetry(async () => {
       return await postApi<ModuleContent>('/api/tutor/edit', { content: currentContent, editPrompt });
     }, 4, 3000, onRetry);
+  },
+
+  async upsertProfile(profile: Partial<UserProfile>): Promise<UserProfile> {
+    const p = await postApi<UserProfile>('/api/profile/upsert', { profile });
+    try {
+      localStorage.setItem('nexus_profile_context', JSON.stringify({
+        userSegment: p.userSegment,
+        connectivityLevel: p.connectivityLevel,
+        preferredLanguage: p.preferredLanguage,
+        learningGoal: p.learningGoal,
+        region: p.region,
+        lowBandwidthMode: !!p.lowBandwidthMode,
+      }));
+    } catch {
+      // ignore
+    }
+    return p;
+  },
+
+  async getProfile(): Promise<UserProfile | null> {
+    try {
+      const r = await fetchJsonWithTimeout(`/api/profile/me?accountId=${encodeURIComponent(getAccountId())}`, { method: 'GET' }, 12000);
+      if (!r.ok) return null;
+      return r.json?.data || null;
+    } catch {
+      return null;
+    }
+  },
+
+  async recordImpactEvent(
+    courseId: string,
+    type: SyncQueueItem['type'],
+    payload: Record<string, any> = {}
+  ): Promise<void> {
+    await postApi('/api/impact/event', { courseId, type, payload });
+  },
+
+  async recordPretest(courseId: string, scorePct: number): Promise<void> {
+    await postApi('/api/impact/pretest', { courseId, scorePct });
+  },
+
+  async recordPosttest(courseId: string, scorePct: number): Promise<void> {
+    await postApi('/api/impact/posttest', { courseId, scorePct });
+  },
+
+  async recordConfidence(courseId: string, phase: 'pre' | 'post', score: number): Promise<void> {
+    await postApi('/api/impact/confidence', { courseId, phase, score });
+  },
+
+  async getImpactSummary(courseId?: string): Promise<ImpactMetrics> {
+    const r = await fetchJsonWithTimeout(
+      `/api/impact/summary?accountId=${encodeURIComponent(getAccountId())}${courseId ? `&courseId=${encodeURIComponent(courseId)}` : ''}`,
+      { method: 'GET' },
+      12000
+    );
+    if (!r.ok || !r.json?.data) {
+      return {
+        usersReached: 0,
+        skillGainPp: 0,
+        confidenceGain: 0,
+        completionRate: 0,
+        avgTimeToCompletionMins: 0,
+        d7Retention: 0,
+      };
+    }
+    return r.json.data as ImpactMetrics;
+  },
+
+  async publishCourse(course: Course, visibility: 'private' | 'public') {
+    return await postApi<{ id: string; visibility: string; moderationStatus: string }>(
+      `/api/courses/${encodeURIComponent(course.title || 'course')}/publish`,
+      { course, visibility }
+    );
+  },
+
+  async setCourseVisibility(post: PublicCoursePost, visibility: 'private' | 'public') {
+    const snapshot = post.snapshot || { title: post.courseId, description: post.description || '', modules: [] };
+    return await postApi<{ id: string; visibility: string; moderationStatus: string }>(
+      `/api/courses/${encodeURIComponent(post.courseId || 'course')}/publish`,
+      { course: snapshot, visibility }
+    );
+  },
+
+  async listMyCourses(): Promise<PublicCoursePost[]> {
+    const r = await fetchJsonWithTimeout(`/api/courses/my?accountId=${encodeURIComponent(getAccountId())}`, { method: 'GET' }, 12000);
+    if (!r.ok || !Array.isArray(r.json?.data)) return [];
+    return r.json.data as PublicCoursePost[];
+  },
+
+  async getPublicFeed(): Promise<PublicCoursePost[]> {
+    const r = await fetchJsonWithTimeout('/api/public/feed', { method: 'GET' }, 12000);
+    if (!r.ok) return [];
+    return Array.isArray(r.json?.data) ? r.json.data : [];
+  },
+
+  async getPublicComments(postId: string): Promise<Array<{ id: string; accountId: string; text: string; createdAt: string }>> {
+    const r = await fetchJsonWithTimeout(`/api/public/${encodeURIComponent(postId)}/comments`, { method: 'GET' }, 12000);
+    if (!r.ok || !Array.isArray(r.json?.data)) return [];
+    return r.json.data;
+  },
+
+  async reactToPublic(postId: string, reaction = 'like'): Promise<void> {
+    await postApi(`/api/public/${encodeURIComponent(postId)}/react`, { reaction });
+  },
+
+  async commentOnPublic(postId: string, comment: string): Promise<void> {
+    await postApi(`/api/public/${encodeURIComponent(postId)}/comment`, { comment });
+  },
+
+  async reportCourse(courseId: string, reason: string): Promise<void> {
+    await postApi(`/api/courses/${encodeURIComponent(courseId)}/report`, { reason });
+  },
+
+  async createCohort(name: string, courseId: string): Promise<Cohort> {
+    return await postApi<Cohort>('/api/cohorts', { name, courseId });
+  },
+
+  async joinCohort(cohortId: string): Promise<void> {
+    await postApi(`/api/cohorts/${encodeURIComponent(cohortId)}/join`, {});
+  },
+
+  async syncProgress(items: SyncQueueItem[]): Promise<{ merged: number }> {
+    return await postApi<{ merged: number }>('/api/progress/sync', { items });
+  },
+
+  async getCohortDashboard(cohortId: string): Promise<any> {
+    const r = await fetchJsonWithTimeout(
+      `/api/cohorts/${encodeURIComponent(cohortId)}/dashboard?accountId=${encodeURIComponent(getAccountId())}`,
+      { method: 'GET' },
+      12000
+    );
+    if (!r.ok) return null;
+    return r.json?.data || null;
   },
 };

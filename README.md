@@ -1,128 +1,164 @@
-# Nexus AI — Duolingo/Sideme-style AI Course Generator (Multi-Provider + Offline Pack)
+# SEA-Geko (Nexus AI): Education Continuity for Low-Connectivity Learners
 
-This project generates **interactive learning modules** (cards, quizzes, challenges, videos) and enforces a **locked progression**: the next module unlocks only when the learner **passes the final quiz** of the current module.
+SEA-Geko is an AI-powered course generator and learning app designed for **education access and learning continuity** in ASEAN, especially for users with unstable internet, low-bandwidth devices, and disrupted learning environments.
 
-## What’s included
+This repository keeps the original interactive learning functionality and adds scoring-focused features for hackathon judging:
+- beneficiary-specific onboarding
+- adaptive AI generation context
+- impact metric tracking
+- account-based offline downloaded courses
+- ASEAN language support
+- low-bandwidth mode
+- public/private publishing with moderation signals
+- cohort workflows
 
-- **Multi-provider model router** (Blackbox-style selection):
-  - Provider: **Auto / Gemini / OpenAI / Claude / OpenRouter**
-  - Model: Auto or pick a specific model
-  - Server does **fallback + backoff + caching** to reduce rate-limit failures
-- **Module tracking & locking**
-  - Modules unlock only after passing the **final module quiz (>=70%)**
-- **Per-step Tutor + Edit box**
-  - Ask questions about the current step
-  - Refine/edit the step (extend explanation, add examples, generate harder quiz, etc.)
-- **Outline mode (no assessment)**
-  - Paste a course outline → immediate modules + steps (Duolingo flow)
-- **Offline friendly**
-  - Export/Import a **Course Pack** (JSON) so learners can reopen course/progress without needing regeneration
+## 1) Hackathon Lane and SDG Mapping
 
-> Note about “YouTube offline download”:
-> - This app embeds YouTube videos and can work offline for your generated text/quizzes via **Course Pack export/import**.
-> - It does **not** download YouTube videos directly (copyright/ToS). If you need offline video, use YouTube’s official offline feature or host your own videos.
+### AI Singapore lane (single-scope)
+- Primary lane: **Education access and learning continuity**
+- Beneficiaries: youth (18-35), educators, displaced learners, community organizations
 
----
+### Borneo alignment
+- Problem statement and objectives are explicit and measurable
+- Responsible AI and privacy docs are included
+- ASEAN scalability and stakeholder plan are documented
 
-## Run locally
+### SDG mapping
+- **SDG 4**: Quality Education
+- **SDG 8**: Decent Work and Economic Growth
+- **SDG 10**: Reduced Inequalities
 
-### 1) Install dependencies
+## 2) Core Product Capabilities
+
+### Existing functionality preserved
+- AI-generated assessment, course outline, lesson plan, and step content
+- Multi-provider AI routing (Gemini/OpenAI/Anthropic/OpenRouter, with fallback behavior)
+- Locked progression and quiz-based completion flow
+- Tutor ask/edit flows (online)
+- Outline builder (auto and manual)
+
+### New scoring-focused functionality
+- Segment-aware onboarding:
+  - `userSegment`: youth, educator, displaced, community_org
+  - `connectivityLevel`: offline_first, low_bandwidth, normal
+  - `preferredLanguage`, `learningGoal`, `region`, `deviceClass`
+- Adaptive generation rules via `profileContext` in API payloads
+- Impact instrumentation:
+  - `course_started`, `lesson_started`, `lesson_completed`, `quiz_submitted`, `course_completed`, `daily_active`
+- KPI cards:
+  - skill gain, confidence gain, completion proxy, reached users
+- Offline continuity:
+  - account-based downloaded course snapshots in IndexedDB
+  - open downloaded courses without raw import/export
+  - AI generation/edit disabled while offline
+- Community features:
+  - publish course private/public
+  - moderation status and reporting endpoints
+  - cohort create/join flows
+
+## 3) Architecture
+
+### Frontend
+- React + TypeScript + Vite
+- Main app flow in `src/App.tsx`
+- Offline persistence in `src/lib/offlineStore.ts`
+- Localization helper in `src/lib/i18n.ts`
+
+### Backend
+- Node HTTP server in `server/server.cjs`
+- AI routes + prompt builders + validation
+- Lightweight app persistence in `server/.data/app-db.json` (demo-mode storage)
+
+### Data model target
+- Supabase migration included in `supabase/migrations/0001_core.sql`
+- Covers profiles, courses, progress events, impact attempts, public posts, moderation, and cohorts
+
+## 4) API Endpoints (Implemented Surface)
+
+- `GET /api/profile/me`
+- `POST /api/profile/upsert`
+- `POST /api/impact/pretest`
+- `POST /api/impact/posttest`
+- `POST /api/impact/confidence`
+- `POST /api/impact/event`
+- `GET /api/impact/summary`
+- `GET /api/courses/my`
+- `POST /api/courses/:id/publish`
+- `GET /api/public/feed`
+- `POST /api/public/:id/react`
+- `POST /api/public/:id/comment`
+- `POST /api/courses/:id/report`
+- `POST /api/cohorts`
+- `POST /api/cohorts/:id/join`
+- `GET /api/cohorts/:id/dashboard`
+- `POST /api/progress/sync`
+
+## 5) Local Development
+
+## Requirements
+- Node.js 18+
+- npm
+
+## Install
 ```bash
 npm install
 ```
 
-### 2) Configure environment
-Create `.env.local` based on `.env.example`.
-
-You can set **one provider** or multiple. Auto mode will pick the best available and fail over.
-
-### 3) Start the server (Terminal 1)
+## Run backend
 ```bash
 npm run dev:server
 ```
-Server runs on `http://localhost:8787`.
+Backend runs on `http://localhost:8787`.
 
-### 4) Start the frontend (Terminal 2)
+## Run frontend
 ```bash
 npm run dev
 ```
-Frontend runs on `http://localhost:3000` and proxies `/api/*` to the server.
+Frontend runs on `http://localhost:3000`.
 
----
+## Typecheck
+```bash
+npm run lint
+```
 
-## Production build (single server)
-
+## Production
 ```bash
 npm run start:prod
 ```
-This builds the frontend and serves `dist/` from the same server process.
 
----
+## 6) Environment Variables
 
-## Deploy notes (Render / VPS)
+Current local setup can use `.env` in project root.
 
-- Set env vars in your host (same keys as `.env.example`).
-- Run command: `npm run start:prod`
-- Expose port: `PORT` (default 8787)
+Recommended production keys:
+- `PORT`
+- `GEMINI_API_KEY`
+- `OPENAI_API_KEY`
+- `ANTHROPIC_API_KEY`
+- `OPENROUTER_API_KEY`
+- `YOUTUBE_API_KEY` (optional)
+- `VITE_SUPABASE_URL` (target architecture)
+- `VITE_SUPABASE_ANON_KEY` (target architecture)
+- `SUPABASE_SERVICE_ROLE_KEY` (server-side only)
 
----
+## 7) Responsible AI, Privacy, and Safety
 
-## Using Outline Mode
+See:
+- `docs/responsible-ai.md`
+- `docs/privacy-consent.md`
+- `docs/safety-moderation.md`
+- `docs/impact-metrics.md`
 
-On the landing screen:
-1. Click **“Have a course outline? Paste it”**
-2. Paste something like:
+## 8) Judge-Facing Submission Docs
 
-```
-Course Outline: Data Structures and Algorithms in Java
-Prerequisites...
-Module 1: Introduction to DSA
-- What are DSAs?
-- Why DSAs matter
-Module 2: Arrays, Stacks, Queues
-...
-```
+- Borneo report: `docs/borneo-report.md`
+- AI Singapore brief: `docs/ai-singapore-brief.md`
+- Demo script: `pitch/demo-script-3min.md`
+- Slide structure: `pitch/slide-outline.md`
 
-This immediately creates modules + steps and enforces locked progression.
+## 9) Known Limits (Transparent)
 
----
-
-## Export / Import (Offline Pack)
-
-- **Export**: downloads a JSON “Course Pack” containing course + progress + router config.
-- **Import**: restores everything from a saved pack.
-
-
----
-
-## Vercel-only deployment
-
-This repo now supports frontend + backend in one Vercel project:
-
-- Frontend: Vite static output (`dist`)
-- Backend: Vercel Functions under `api/*`
-
-Implemented API routes:
-
-- `api/config.js`
-- `api/generate/assessment.js`
-- `api/generate/course-outline.js`
-- `api/generate/module-lesson-plan.js`
-- `api/generate/step-content.js`
-- `api/tutor/ask.js`
-- `api/tutor/edit.js`
-
-### Deploy steps
-
-1. Push this repo to GitHub.
-2. Import the repo in Vercel.
-3. In Vercel project settings, set Environment Variables:
-   - `GEMINI_API_KEY`
-   - `OPENAI_API_KEY`
-   - `ANTHROPIC_API_KEY`
-   - `OPENROUTER_API_KEY`
-   - Optional: `YOUTUBE_API_KEY`
-   - Optional model/provider lists: `GEMINI_MODELS`, `OPENAI_MODELS`, `ANTHROPIC_MODELS`, `OPENROUTER_MODELS`, `AI_PROVIDER_CANDIDATES`
-4. Deploy.
-
-`vercel.json` is included and configured for Vite + Node.js functions.
+- Demo backend currently uses local JSON persistence, not full Supabase runtime integration.
+- Moderation is heuristic and not yet backed by dedicated safety classifiers.
+- Localization coverage is partial in current UI copy; core switching is in place.
+- KPI formulas are live but still simplified for hackathon speed.

@@ -24,11 +24,19 @@ import {
   X,
   AlertCircle,
   Upload,
-  FileText
+  FileText,
+  Download,
+  Home,
+  Users,
+  Trophy,
+  UserCircle2,
+  MessageSquare,
+  Share2,
+  BarChart3
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { aiService } from './services/aiService';
-import { Course, AssessmentQuestion, Module, ContentType, ModuleContent } from './types';
+import { Course, AssessmentQuestion, Module, ContentType, ModuleContent, UserProfile, SupportedLocale, ImpactMetrics, DownloadState, PublicCoursePost } from './types';
 import { SAMPLE_COURSE } from './constants';
 import { cn } from './lib/utils';
 import { Quiz } from './components/Quiz';
@@ -39,8 +47,11 @@ import { Avatar } from './components/Avatar';
 import { GenerationFlow } from './components/GenerationFlow';
 import { ContentEditor } from './components/ContentEditor';
 import { CiscoAccordion, CiscoHotspot, CiscoCarousel, CiscoLearningCard } from './components/CiscoComponents';
+import { getLocale, setLocale, SUPPORTED_LOCALES, t } from './lib/i18n';
+import { offlineStore } from './lib/offlineStore';
 
 type AppState = 'idle' | 'assessing' | 'planning' | 'generating_content' | 'learning';
+type HomeTab = 'learn' | 'community' | 'leaderboard' | 'profile' | 'downloads';
 
 type LessonOptions = {
   quiz: boolean;
@@ -103,22 +114,15 @@ type MascotMood = 'happy' | 'sad' | 'idle';
 
 const SEA_GEKO_ASSETS = {
   happy: [
-    '/mascot/good-job.png',
-    '/mascot/sea-geko-good-job.png',
-    '/mascot/sea-geko-happy.png',
     '/mascot/sea-geko-happy.svg',
+    '/mascot/icon.png',
   ],
   sad: [
     '/mascot/sea-geko-sad.png',
-    '/mascot/sad.png',
-    '/mascot/sea-geko-cry.png',
     '/mascot/sea-geko-sad.svg',
   ],
   idle: [
-    '/mascot/sea-geko-icon.png',
-    '/mascot/sea-geko-idle.png',
     '/mascot/icon.png',
-    '/mascot/idle.png',
     '/mascot/sea-geko-idle.svg',
   ],
 } as const;
@@ -296,6 +300,105 @@ const toQuizFallbackQuestion = (topic: string) => {
   };
 };
 
+const normalizeFlashcardKey = (value: string): string => {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[`*_#()[\]{}<>.,;:!?/\\-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+const listFlashcardFrontKeys = (cards: Array<{ front?: string }>): string[] => {
+  return cards
+    .map((card) => normalizeFlashcardKey(String(card?.front || '')))
+    .filter(Boolean);
+};
+
+const buildFallbackFlashcards = (topic: string, seenKeys: Set<string>, count = 4) => {
+  const rootTopic = String(topic || '').replace(/^flashcards\s*:?\s*/i, '').trim() || 'This topic';
+  const candidates = [
+    {
+      front: `${rootTopic} Overview`,
+      back: `A concise summary of ${rootTopic} and why it matters in this lesson.`,
+    },
+    {
+      front: `${rootTopic} Key Concept`,
+      back: `The main idea learners should remember when applying ${rootTopic}.`,
+    },
+    {
+      front: `${rootTopic} Practical Use`,
+      back: `A real situation where ${rootTopic} can be applied effectively.`,
+    },
+    {
+      front: `${rootTopic} Common Pitfall`,
+      back: `A frequent mistake related to ${rootTopic} and how to avoid it.`,
+    },
+    {
+      front: `${rootTopic} Quick Recall`,
+      back: `A short memory cue to quickly review ${rootTopic}.`,
+    },
+  ];
+
+  const out: Array<{ front: string; back: string }> = [];
+  for (const item of candidates) {
+    if (out.length >= count) break;
+    const key = normalizeFlashcardKey(item.front);
+    if (!key || seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    out.push(item);
+  }
+
+  let cursor = 1;
+  while (out.length < count) {
+    const front = `${rootTopic} Insight ${cursor}`;
+    const back = `A focused takeaway (${cursor}) that reinforces ${rootTopic}.`;
+    const key = normalizeFlashcardKey(front);
+    cursor += 1;
+    if (!key || seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    out.push({ front, back });
+  }
+
+  return out;
+};
+
+const sanitizeFlashcards = (
+  cards: any[],
+  topicHint: string,
+  blockedKeys: Set<string> = new Set()
+) => {
+  const used = new Set<string>(blockedKeys);
+  const out: Array<{ front: string; back: string; icon?: string; imageUrl?: string; cardType?: string }> = [];
+
+  for (const raw of Array.isArray(cards) ? cards : []) {
+    if (out.length >= 6) break;
+    const front = String(raw?.front || '').trim();
+    const back = String(raw?.back || '').trim();
+    if (!front || !back) continue;
+
+    const frontKey = normalizeFlashcardKey(front);
+    const pairKey = `${frontKey}::${normalizeFlashcardKey(back).slice(0, 120)}`;
+    if (!frontKey || used.has(frontKey) || used.has(pairKey)) continue;
+    used.add(frontKey);
+    used.add(pairKey);
+
+    out.push({
+      front,
+      back,
+      icon: raw?.icon,
+      imageUrl: /^https?:\/\//i.test(String(raw?.imageUrl || '')) ? String(raw.imageUrl) : '',
+      cardType: raw?.cardType,
+    });
+  }
+
+  if (out.length < 4) {
+    const fillers = buildFallbackFlashcards(topicHint, used, 4 - out.length);
+    for (const card of fillers) out.push(card);
+  }
+
+  return out.slice(0, 6);
+};
+
 const sanitizeModuleContent = (content: ModuleContent, fallbackTitle = ''): ModuleContent => {
   if (!content || typeof content !== 'object') return content;
   const type = String(content.type || '').toUpperCase();
@@ -314,10 +417,7 @@ const sanitizeModuleContent = (content: ModuleContent, fallbackTitle = ''): Modu
 
   if (type === 'FLIP_CARD') {
     const cards = Array.isArray(data.cards) ? data.cards : [];
-    out.data.cards = cards.map((card: any) => ({
-      ...card,
-      imageUrl: /^https?:\/\//i.test(String(card?.imageUrl || '')) ? card.imageUrl : '',
-    }));
+    out.data.cards = sanitizeFlashcards(cards, out.title || fallbackTitle || 'Flashcards');
   }
 
   if (type === 'DRAG_FILL') {
@@ -533,11 +633,31 @@ const sanitizeCourse = (course: Course | null): Course | null => {
     modules: Array.isArray(course.modules)
       ? course.modules.map((m, idx) => {
           const seenVideoIds = new Set<string>();
+          const seenFlashcardFrontKeys = new Set<string>();
           const moduleNumberHint = m.steps.find((step) => typeof step.moduleNumber === 'number')?.moduleNumber || idx + 1;
           const steps = Array.isArray(m.steps)
             ? m.steps.map((s) => {
                 const step = s.content ? { ...s, content: sanitizeModuleContent(s.content, s.title) } : s;
                 const c: any = (step as any)?.content;
+                const normalizedType = String(c?.type || step.type || '').toUpperCase();
+                const isFlashcard = normalizedType === 'FLIP_CARD';
+                if (isFlashcard && Array.isArray(c?.data?.cards)) {
+                  const topicHint = String(c?.title || step.title || m.title || '').trim();
+                  const cards = sanitizeFlashcards(c.data.cards, topicHint, seenFlashcardFrontKeys);
+                  for (const key of listFlashcardFrontKeys(cards)) {
+                    seenFlashcardFrontKeys.add(key);
+                  }
+                  return {
+                    ...step,
+                    content: {
+                      ...c,
+                      data: {
+                        ...(c?.data || {}),
+                        cards,
+                      },
+                    },
+                  };
+                }
                 const isVideo = String(c?.type || step.type || '').toUpperCase() === 'VIDEO';
                 if (!isVideo) return step;
                 const videoId = extractYouTubeVideoId(c?.data?.videoUrl) || extractYouTubeVideoId(c?.data?.videoWebUrl);
@@ -1117,6 +1237,41 @@ const convertOutlineDraftToEditableModules = (courseDraft: Course): OutlineModul
   return mapped.length ? mapped : [createOutlineModule(1), createOutlineModule(2)];
 };
 
+const getAccountId = () => {
+  try {
+    const key = 'nexus_account_id';
+    let id = localStorage.getItem(key);
+    if (!id) {
+      id = `local-${Math.random().toString(36).slice(2, 10)}`;
+      localStorage.setItem(key, id);
+    }
+    return id;
+  } catch {
+    return 'local-anon';
+  }
+};
+
+const DEFAULT_PROFILE: UserProfile = {
+  id: '',
+  userSegment: 'youth',
+  connectivityLevel: 'normal',
+  learningGoal: '',
+  preferredLanguage: 'en',
+  region: 'ASEAN',
+  discoverySource: 'social_media',
+  deviceClass: 'unknown',
+  lowBandwidthMode: false,
+};
+
+const DEFAULT_IMPACT: ImpactMetrics = {
+  usersReached: 0,
+  skillGainPp: 0,
+  confidenceGain: 0,
+  completionRate: 0,
+  avgTimeToCompletionMins: 0,
+  d7Retention: 0,
+};
+
 export default function App() {
   const normalizeProvider = (value: string): ProviderId => {
     if (value === 'gemini' || value === 'openai' || value === 'anthropic' || value === 'openrouter') {
@@ -1142,12 +1297,15 @@ export default function App() {
   const [promptError, setPromptError] = useState<string | null>(null);
   const [shakePrompt, setShakePrompt] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; size: number; type: string }>>([]);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const promptInputRef = useRef<HTMLInputElement | null>(null);
   const outlineTitleInputRef = useRef<HTMLInputElement | null>(null);
   const outlineScrollRef = useRef<HTMLDivElement | null>(null);
   const composerMenuRef = useRef<HTMLDivElement | null>(null);
+  const trackedCourseStartRef = useRef<string | null>(null);
+  const trackedLessonRef = useRef<string | null>(null);
+  const trackedCompletedLessonRef = useRef<string | null>(null);
+  const trackedDailyRef = useRef<string | null>(null);
 
   const [assessment, setAssessment] = useState<AssessmentQuestion[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -1193,6 +1351,30 @@ export default function App() {
   const [retryInfo, setRetryInfo] = useState<{ attempt: number, delay: number } | null>(null);
   const [interactionProgress, setInteractionProgress] = useState<Record<string, StepInteractionProgress>>({});
   const [mascotToast, setMascotToast] = useState<MascotToastState | null>(null);
+  const [accountId] = useState<string>(() => getAccountId());
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [profileDraft, setProfileDraft] = useState<UserProfile>(DEFAULT_PROFILE);
+  const [locale, setLocaleState] = useState<SupportedLocale>(() => getLocale());
+  const [activeHomeTab, setActiveHomeTab] = useState<HomeTab>('learn');
+  const [lowBandwidthMode, setLowBandwidthMode] = useState<boolean>(() => {
+    try { return localStorage.getItem('nexus_low_bandwidth_mode') === '1'; } catch { return false; }
+  });
+  const [impactMetrics, setImpactMetrics] = useState<ImpactMetrics>(DEFAULT_IMPACT);
+  const [downloadStates, setDownloadStates] = useState<DownloadState[]>([]);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [communityError, setCommunityError] = useState<string | null>(null);
+  const [communityNotice, setCommunityNotice] = useState<string | null>(null);
+  const [myPostsCount, setMyPostsCount] = useState(0);
+  const [publicPostsCount, setPublicPostsCount] = useState(0);
+  const [myCourses, setMyCourses] = useState<PublicCoursePost[]>([]);
+  const [publicFeed, setPublicFeed] = useState<PublicCoursePost[]>([]);
+  const [commentsByPost, setCommentsByPost] = useState<Record<string, Array<{ id: string; accountId: string; text: string; createdAt: string }>>>({});
+  const [commentDraftByPost, setCommentDraftByPost] = useState<Record<string, string>>({});
+  const [analyticsByCourse, setAnalyticsByCourse] = useState<Record<string, ImpactMetrics>>({});
+  const [cohortName, setCohortName] = useState('');
+  const [activeCohortId, setActiveCohortId] = useState<string | null>(null);
+  const [onboardingStep, setOnboardingStep] = useState(0);
 
   const stepProgressKey = (moduleId: string, stepId: string) => `${moduleId}:${stepId}`;
 
@@ -1436,6 +1618,416 @@ export default function App() {
     });
   }, [course]);
 
+  useEffect(() => {
+    setLocale(locale);
+    try {
+      const raw = localStorage.getItem('nexus_profile_context');
+      const parsed = raw ? JSON.parse(raw) : {};
+      localStorage.setItem('nexus_profile_context', JSON.stringify({
+        ...parsed,
+        preferredLanguage: locale,
+      }));
+    } catch {
+      // ignore
+    }
+    setProfileDraft((prev) => ({ ...prev, preferredLanguage: locale }));
+  }, [locale]);
+
+  useEffect(() => {
+    if (state !== 'idle') {
+      setActiveHomeTab('learn');
+    }
+  }, [state]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('nexus_low_bandwidth_mode', lowBandwidthMode ? '1' : '0');
+      const raw = localStorage.getItem('nexus_profile_context');
+      const parsed = raw ? JSON.parse(raw) : {};
+      localStorage.setItem('nexus_profile_context', JSON.stringify({
+        ...parsed,
+        lowBandwidthMode,
+        connectivityLevel: lowBandwidthMode ? 'low_bandwidth' : (parsed.connectivityLevel || 'normal'),
+      }));
+    } catch {
+      // ignore
+    }
+  }, [lowBandwidthMode]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const existing = await aiService.getProfile();
+      if (cancelled) return;
+      if (existing && existing.id) {
+        setProfile(existing);
+        setProfileDraft(existing);
+        if (existing.preferredLanguage) {
+          setLocaleState(existing.preferredLanguage);
+        }
+        setOnboardingOpen(false);
+      } else {
+        setOnboardingOpen(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [accountId]);
+
+  useEffect(() => {
+    if (onboardingOpen) {
+      setOnboardingStep(0);
+    }
+  }, [onboardingOpen]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const rows = await offlineStore.getDownloadStates(accountId);
+      if (!cancelled) setDownloadStates(rows);
+    })();
+    return () => { cancelled = true; };
+  }, [accountId, course, state]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const currentCourseId = state === 'learning' && course?.title ? `course:${course.title}` : '';
+      const metrics = await aiService.getImpactSummary(currentCourseId || undefined);
+      if (!cancelled) setImpactMetrics(metrics);
+    })();
+    return () => { cancelled = true; };
+  }, [course, state]);
+
+  const handleSaveProfile = async () => {
+    try {
+      const payload: UserProfile = {
+        ...profileDraft,
+        id: accountId,
+        preferredLanguage: locale,
+        lowBandwidthMode,
+      };
+      const saved = await aiService.upsertProfile(payload);
+      setProfile(saved);
+      setProfileDraft(saved);
+      setOnboardingOpen(false);
+      setGlobalError(null);
+    } catch (e: any) {
+      setGlobalError(String(e?.message || 'Failed to save profile'));
+    }
+  };
+
+  const handleDownloadCurrentCourse = async () => {
+    if (!course) return;
+    try {
+      const courseId = `course:${course.title}`;
+      const snapshotVersion = 1;
+      const serialized = JSON.stringify(course);
+      await offlineStore.saveCourseSnapshot(accountId, courseId, snapshotVersion, course);
+      await offlineStore.saveDownloadState(accountId, {
+        courseId,
+        snapshotVersion,
+        downloadedAt: new Date().toISOString(),
+        sizeBytes: serialized.length,
+        title: course.title,
+      });
+      const rows = await offlineStore.getDownloadStates(accountId);
+      setDownloadStates(rows);
+      setDownloadError(null);
+      showMascotToast('Course downloaded', 'This course is now available from your account in offline mode.', 'happy');
+    } catch (e: any) {
+      setDownloadError(String(e?.message || 'Failed to download course for offline use.'));
+    }
+  };
+
+  const handleOpenDownloadedCourse = async (row: DownloadState) => {
+    try {
+      const restored = await offlineStore.getCourseSnapshot(accountId, row.courseId, row.snapshotVersion);
+      if (!restored) {
+        setDownloadError('Downloaded snapshot not found. Please re-download this course.');
+        return;
+      }
+      setCourse(sanitizeCourse(restored));
+      setState('learning');
+      setActiveModuleId(restored.modules[0]?.id || null);
+      setExpandedModuleId(restored.modules[0]?.id || null);
+      setGlobalError(null);
+      setRetryInfo(null);
+      showMascotToast('Opened downloaded course', 'You can continue learning offline from your account.', 'happy');
+    } catch (e: any) {
+      setDownloadError(String(e?.message || 'Failed to open downloaded course.'));
+    }
+  };
+
+  const refreshCoursePanels = async (includeComments = false) => {
+    if (!isOnline) return;
+    const [mine, feed] = await Promise.all([
+      aiService.listMyCourses(),
+      aiService.getPublicFeed(),
+    ]);
+    setMyCourses(mine);
+    setPublicFeed(feed);
+    setMyPostsCount(mine.length);
+    setPublicPostsCount(feed.length);
+
+    const metricPairs = await Promise.all(
+      mine.map(async (post) => {
+        try {
+          const metrics = await aiService.getImpactSummary(post.courseId);
+          return [post.courseId, metrics] as const;
+        } catch {
+          return [post.courseId, DEFAULT_IMPACT] as const;
+        }
+      })
+    );
+    setAnalyticsByCourse(Object.fromEntries(metricPairs));
+
+    if (includeComments) {
+      const commentPairs = await Promise.all(
+        feed.slice(0, 12).map(async (post) => {
+          const rows = await aiService.getPublicComments(post.id);
+          return [post.id, rows] as const;
+        })
+      );
+      setCommentsByPost((prev) => ({ ...prev, ...Object.fromEntries(commentPairs) }));
+    }
+  };
+
+  const handlePublishCourse = async (visibility: 'private' | 'public') => {
+    if (!course) return;
+    if (!isOnline) {
+      setCommunityError('Publishing requires an internet connection.');
+      return;
+    }
+    try {
+      const result = await aiService.publishCourse(course, visibility);
+      setCommunityError(null);
+      setCommunityNotice(`Course published as ${result.visibility} (${result.moderationStatus}).`);
+      await refreshCoursePanels(true);
+    } catch (e: any) {
+      setCommunityError(String(e?.message || 'Failed to publish course.'));
+    }
+  };
+
+  const handleToggleCourseVisibility = async (post: PublicCoursePost) => {
+    if (!isOnline) {
+      setCommunityError('Publishing requires an internet connection.');
+      return;
+    }
+    try {
+      const nextVisibility = post.visibility === 'public' ? 'private' : 'public';
+      const result = await aiService.setCourseVisibility(post, nextVisibility);
+      setCommunityError(null);
+      setCommunityNotice(`Course updated to ${result.visibility}.`);
+      await refreshCoursePanels();
+    } catch (e: any) {
+      setCommunityError(String(e?.message || 'Failed to update visibility.'));
+    }
+  };
+
+  const handleReactToPost = async (postId: string) => {
+    if (!isOnline) {
+      setCommunityError('Reacting requires an internet connection.');
+      return;
+    }
+    try {
+      await aiService.reactToPublic(postId, 'like');
+      setCommunityError(null);
+      await refreshCoursePanels();
+    } catch (e: any) {
+      setCommunityError(String(e?.message || 'Failed to react to post.'));
+    }
+  };
+
+  const handleCommentOnPost = async (postId: string) => {
+    if (!isOnline) {
+      setCommunityError('Commenting requires an internet connection.');
+      return;
+    }
+    const text = String(commentDraftByPost[postId] || '').trim();
+    if (!text) return;
+    try {
+      await aiService.commentOnPublic(postId, text);
+      setCommentDraftByPost((prev) => ({ ...prev, [postId]: '' }));
+      const comments = await aiService.getPublicComments(postId);
+      setCommentsByPost((prev) => ({ ...prev, [postId]: comments }));
+      setCommunityError(null);
+      await refreshCoursePanels();
+    } catch (e: any) {
+      setCommunityError(String(e?.message || 'Failed to post comment.'));
+    }
+  };
+
+  const handleSharePost = async (post: PublicCoursePost) => {
+    const text = `${post.title} - ${post.description || ''}`.trim();
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: post.title, text });
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      }
+      setCommunityError(null);
+      setCommunityNotice('Course details copied for sharing.');
+    } catch (e: any) {
+      setCommunityError(String(e?.message || 'Unable to share this post.'));
+    }
+  };
+
+  const handleDownloadPostCourse = async (post: PublicCoursePost) => {
+    const snapshot = post.snapshot;
+    if (!snapshot) {
+      setDownloadError('Course snapshot is not available for download.');
+      return;
+    }
+    try {
+      const serialized = JSON.stringify(snapshot);
+      await offlineStore.saveCourseSnapshot(accountId, post.courseId, 1, snapshot);
+      await offlineStore.saveDownloadState(accountId, {
+        courseId: post.courseId,
+        snapshotVersion: 1,
+        downloadedAt: new Date().toISOString(),
+        sizeBytes: serialized.length,
+        title: post.title || post.courseId,
+      });
+      const rows = await offlineStore.getDownloadStates(accountId);
+      setDownloadStates(rows);
+      setDownloadError(null);
+      setCommunityNotice('Course downloaded to your account.');
+    } catch (e: any) {
+      setDownloadError(String(e?.message || 'Failed to download course.'));
+    }
+  };
+
+  const handleCreateCohort = async () => {
+    if (!course) return;
+    const name = cohortName.trim();
+    if (!name) {
+      setCommunityError('Enter a cohort name.');
+      return;
+    }
+    try {
+      const c = await aiService.createCohort(name, `course:${course.title}`);
+      setActiveCohortId(c.id);
+      setCommunityError(null);
+      setCommunityNotice(`Cohort created: ${c.name}`);
+    } catch (e: any) {
+      setCommunityError(String(e?.message || 'Failed to create cohort.'));
+    }
+  };
+
+  const handleJoinCohort = async () => {
+    if (!activeCohortId) return;
+    try {
+      await aiService.joinCohort(activeCohortId);
+      setCommunityError(null);
+      setCommunityNotice('Joined cohort successfully.');
+    } catch (e: any) {
+      setCommunityError(String(e?.message || 'Failed to join cohort.'));
+    }
+  };
+
+  const trackImpactEvent = async (
+    type: 'course_started' | 'lesson_started' | 'lesson_completed' | 'quiz_submitted' | 'course_completed' | 'daily_active',
+    payload: Record<string, any> = {}
+  ) => {
+    const courseId = course?.title ? `course:${course.title}` : '';
+    if (!courseId) return;
+    const item = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      courseId,
+      type,
+      payload,
+      createdAt: new Date().toISOString(),
+    } as const;
+
+    try {
+      if (isOnline) {
+        await aiService.recordImpactEvent(courseId, type, payload);
+      } else {
+        await offlineStore.queueSyncEvent(item);
+      }
+    } catch {
+      await offlineStore.queueSyncEvent(item);
+    }
+  };
+
+  useEffect(() => {
+    if (!isOnline) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const queued = await offlineStore.getSyncQueue();
+        if (!queued.length || cancelled) return;
+        await aiService.syncProgress(queued);
+        for (const item of queued) {
+          await offlineStore.clearSyncEvent(item.id);
+        }
+      } catch {
+        // keep queue for later
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isOnline]);
+
+  useEffect(() => {
+    if (!isOnline) {
+      setMyPostsCount(0);
+      setPublicPostsCount(0);
+      setMyCourses([]);
+      setPublicFeed([]);
+      setCommentsByPost({});
+      setAnalyticsByCourse({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const [mine, feed] = await Promise.all([
+          aiService.listMyCourses(),
+          aiService.getPublicFeed(),
+        ]);
+        if (cancelled) return;
+        setMyCourses(mine);
+        setPublicFeed(feed);
+        setMyPostsCount(mine.length);
+        setPublicPostsCount(feed.length);
+
+        const metricPairs = await Promise.all(
+          mine.map(async (post) => {
+            try {
+              const metrics = await aiService.getImpactSummary(post.courseId);
+              return [post.courseId, metrics] as const;
+            } catch {
+              return [post.courseId, DEFAULT_IMPACT] as const;
+            }
+          })
+        );
+        if (!cancelled) {
+          setAnalyticsByCourse(Object.fromEntries(metricPairs));
+        }
+
+        const commentPairs = await Promise.all(
+          feed.slice(0, 8).map(async (post) => {
+            const comments = await aiService.getPublicComments(post.id);
+            return [post.id, comments] as const;
+          })
+        );
+        if (!cancelled) {
+          setCommentsByPost((prev) => ({ ...prev, ...Object.fromEntries(commentPairs) }));
+        }
+      } catch {
+        if (!cancelled) {
+          setMyPostsCount(0);
+          setPublicPostsCount(0);
+          setMyCourses([]);
+          setPublicFeed([]);
+          setCommentsByPost({});
+          setAnalyticsByCourse({});
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isOnline, course?.title, state]);
+
   const addPoints = (amount: number) => {
     setPoints(prev => prev + amount);
   };
@@ -1458,6 +2050,11 @@ export default function App() {
       setIsOutlineBuilderOpen(false);
       setUseOutlineMode(false);
       setGlobalError(null);
+      setCommunityError(null);
+      setCommunityNotice(null);
+      trackedCourseStartRef.current = null;
+      trackedLessonRef.current = null;
+      trackedCompletedLessonRef.current = null;
       localStorage.removeItem('nexus_progress');
     }
   };
@@ -1475,45 +2072,9 @@ export default function App() {
     setIsComposerMenuOpen(false);
     setIsOutlineBuilderOpen(false);
     setUseOutlineMode(false);
-  };
-
-
-  const downloadCoursePack = () => {
-    try {
-      const pack = {
-        version: 1,
-        savedAt: new Date().toISOString(),
-        progress: {
-          points,
-          streak,
-          course,
-          state,
-          activeModuleId,
-          assessment,
-          answers,
-          currentAssessmentIdx,
-          prompt,
-          interactionProgress,
-        },
-        router: (() => {
-          try { return JSON.parse(localStorage.getItem('nexus_router_config') || '{}'); } catch { return {}; }
-        })(),
-      };
-
-      const blob = new Blob([JSON.stringify(pack, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `nexus-course-pack-${Date.now()}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      alert('Failed to export pack.');
-    }
-  };
-
-  const triggerImportCoursePack = () => {
-    fileInputRef.current?.click();
+    trackedCourseStartRef.current = null;
+    trackedLessonRef.current = null;
+    trackedCompletedLessonRef.current = null;
   };
 
   const triggerAttachmentPicker = () => {
@@ -1607,47 +2168,6 @@ export default function App() {
     }
   };
 
-  const importCoursePack = async (file: File) => {
-    try {
-      const raw = await file.text();
-      const pack = JSON.parse(raw);
-
-      const p = pack?.progress || {};
-      setPoints(p.points || 0);
-      setStreak(p.streak || 0);
-      setCourse(sanitizeCourse(p.course || null));
-      setState(p.state || 'idle');
-      setActiveModuleId(p.activeModuleId || null);
-      setExpandedModuleId(p.activeModuleId || null);
-      setAssessment(p.assessment || []);
-      setAnswers(p.answers || {});
-      setCurrentAssessmentIdx(p.currentAssessmentIdx || 0);
-      setPrompt(p.prompt || '');
-      setInteractionProgress((p.interactionProgress && typeof p.interactionProgress === 'object') ? p.interactionProgress : {});
-
-      if (pack?.router) {
-        localStorage.setItem('nexus_router_config', JSON.stringify(pack.router));
-      }
-
-      localStorage.setItem('nexus_progress', JSON.stringify({
-        points: p.points || 0,
-        streak: p.streak || 0,
-        course: p.course || null,
-        state: p.state || 'idle',
-        activeModuleId: p.activeModuleId || null,
-        assessment: p.assessment || [],
-        answers: p.answers || {},
-        currentAssessmentIdx: p.currentAssessmentIdx || 0,
-        prompt: p.prompt || '',
-        interactionProgress: (p.interactionProgress && typeof p.interactionProgress === 'object') ? p.interactionProgress : {},
-      }));
-
-      alert('Imported course pack!');
-    } catch {
-      alert('Invalid pack file.');
-    }
-  };
-
   const buildDefaultSteps = (moduleTitle: string, courseTitle: string = '') => {
     const programmingTrack = isProgrammingTopic(moduleTitle, courseTitle);
     return [
@@ -1679,7 +2199,7 @@ export default function App() {
     // Best-effort title
     const tLine = lines.find(l => /course outline/i.test(l));
     if (tLine) {
-      const m = tLine.match(/course outline\s*[:\-–—]\s*(.*)$/i);
+      const m = tLine.match(/course outline\s*[:\-]\s*(.*)$/i);
       if (m?.[1]) title = m[1].trim();
     } else if (lines[0] && lines[0].length < 80) {
       title = lines[0];
@@ -1699,7 +2219,7 @@ export default function App() {
 
       const head = line
         .replace(/^[^A-Za-z0-9]+\s*/g, '')
-        .replace(/module\s*\d+\s*[:\-–—]?\s*/i, '')
+        .replace(/module\s*\d+\s*[:\-]?\s*/i, '')
         .trim();
 
       const modTitle = head || `Module ${modules.length + 1}`;
@@ -1713,13 +2233,13 @@ export default function App() {
 
       modules.push({
         title: modTitle,
-        description: desc.slice(0, 4).join(' • ') || 'Interactive lessons and practice.'
+        description: desc.slice(0, 4).join(' | ') || 'Interactive lessons and practice.'
       });
     }
 
     const course: Course = {
       title,
-      description: descriptionParts.slice(0, 6).join(' • ') || 'Interactive, Duolingo-style learning path.',
+      description: descriptionParts.slice(0, 6).join(' | ') || 'Interactive, Duolingo-style learning path.',
       modules: (modules.length ? modules : [{ title: 'Module 1', description: 'Interactive lessons and practice.' }]).map((m, idx) => ({
         id: `m-${idx + 1}`,
         title: m.title,
@@ -1751,6 +2271,9 @@ export default function App() {
     setExpandedModuleId(c.modules[0]?.id || null);
     setGlobalError(null);
     setRetryInfo(null);
+    trackedCourseStartRef.current = null;
+    trackedLessonRef.current = null;
+    trackedCompletedLessonRef.current = null;
   };
 
   const startFromStructuredOutline = () => {
@@ -1762,6 +2285,9 @@ export default function App() {
     setExpandedModuleId(c.modules[0]?.id || null);
     setGlobalError(null);
     setRetryInfo(null);
+    trackedCourseStartRef.current = null;
+    trackedLessonRef.current = null;
+    trackedCompletedLessonRef.current = null;
   };
 
   const updateOutlineModuleTitle = (moduleId: string, title: string) => {
@@ -1876,6 +2402,40 @@ export default function App() {
       quizTotal: totalQuestions || prev.quizTotal || 0,
     }));
 
+    void trackImpactEvent('quiz_submitted', {
+      moduleId,
+      stepId,
+      passed: result.passed,
+      score: result.score,
+      percentage: result.percentage,
+      finalAssessment: isFinalAssessment,
+    });
+    const currentCourseId = course?.title ? `course:${course.title}` : '';
+    if (currentCourseId) {
+      const pretestKey = `nexus_metric_pretest:${currentCourseId}`;
+      const confPreKey = `nexus_metric_conf_pre:${currentCourseId}`;
+      const confPostKey = `nexus_metric_conf_post:${currentCourseId}`;
+      try {
+        if (!localStorage.getItem(pretestKey)) {
+          localStorage.setItem(pretestKey, '1');
+          void aiService.recordPretest(currentCourseId, result.percentage);
+        }
+        if (!localStorage.getItem(confPreKey)) {
+          localStorage.setItem(confPreKey, '1');
+          void aiService.recordConfidence(currentCourseId, 'pre', 3);
+        }
+        if (isFinalAssessment && result.passed) {
+          void aiService.recordPosttest(currentCourseId, result.percentage);
+          if (!localStorage.getItem(confPostKey)) {
+            localStorage.setItem(confPostKey, '1');
+            void aiService.recordConfidence(currentCourseId, 'post', 4);
+          }
+        }
+      } catch {
+        // ignore local metric cache failures
+      }
+    }
+
     if (result.passed) {
       showMascotToast('Good job!', `Quiz passed with ${result.percentage}% score.`, 'happy');
       if (isFinalAssessment) {
@@ -1921,6 +2481,12 @@ export default function App() {
   };
 
   const handleStart = async () => {
+    if (!profile) {
+      setOnboardingOpen(true);
+      setGlobalError('Please complete onboarding before generating courses.');
+      return;
+    }
+
     const normalizedPrompt = normalizePromptInput(prompt);
     if (normalizedPrompt !== prompt) setPrompt(normalizedPrompt);
 
@@ -1942,7 +2508,7 @@ export default function App() {
     }
 
     if (!isOnline) {
-      setGlobalError('You are offline. Import a saved course pack, use a sample course, or switch to outline mode (structure works offline).');
+      setGlobalError('You are offline. Open a downloaded course from your account, use a sample course, or switch to manual outline mode.');
       return;
     }
 
@@ -1953,6 +2519,9 @@ export default function App() {
 
     setPromptError(null);
     setInteractionProgress({});
+    trackedCourseStartRef.current = null;
+    trackedLessonRef.current = null;
+    trackedCompletedLessonRef.current = null;
     setState('assessing');
     setGlobalError(null);
     setRetryInfo(null);
@@ -2140,6 +2709,14 @@ export default function App() {
   };
 
   const handleModuleComplete = (moduleId: string) => {
+    const currentCourse = course;
+    if (!currentCourse) return;
+    const moduleIdx = currentCourse.modules.findIndex((m) => m.id === moduleId);
+    const module = moduleIdx >= 0 ? currentCourse.modules[moduleIdx] : null;
+    const courseAlreadyCompleted = currentCourse.modules.every((m) => !!m.isCompleted);
+    const willCompleteCourse = !!module && !module.isCompleted && !courseAlreadyCompleted
+      && currentCourse.modules.every((m, idx) => idx === moduleIdx || !!m.isCompleted);
+
     setCourse(prev => {
       if (!prev) return null;
       const moduleIdx = prev.modules.findIndex(m => m.id === moduleId);
@@ -2161,6 +2738,10 @@ export default function App() {
 
       return { ...prev, modules: newModules };
     });
+    void trackImpactEvent('lesson_completed', { moduleId });
+    if (willCompleteCourse) {
+      void trackImpactEvent('course_completed', { moduleId });
+    }
   };
 
   const handleUpdateStepContent = (moduleId: string, stepId: string, newContent: ModuleContent) => {
@@ -2384,6 +2965,54 @@ export default function App() {
     };
   })();
 
+  useEffect(() => {
+    if (state !== 'learning' || !course) return;
+    const courseId = `course:${course.title}`;
+    if (trackedCourseStartRef.current !== courseId) {
+      trackedCourseStartRef.current = courseId;
+      void trackImpactEvent('course_started', {
+        segment: profile?.userSegment || 'youth',
+        language: locale,
+        lowBandwidthMode,
+      });
+    }
+    const day = new Date().toISOString().slice(0, 10);
+    const dayKey = `${courseId}:${day}`;
+    if (trackedDailyRef.current !== dayKey) {
+      trackedDailyRef.current = dayKey;
+      void trackImpactEvent('daily_active', { day });
+    }
+  }, [state, course?.title, profile?.userSegment, locale, lowBandwidthMode]);
+
+  useEffect(() => {
+    if (state !== 'learning' || !course || !activeModuleId) return;
+    const lessonKey = `${course.title}:${activeModuleId}:${String(activeLessonNumber ?? 'all')}`;
+    if (trackedLessonRef.current === lessonKey) return;
+    trackedLessonRef.current = lessonKey;
+    void trackImpactEvent('lesson_started', {
+      moduleId: activeModuleId,
+      lessonNumber: typeof activeLessonNumber === 'number' ? activeLessonNumber : null,
+    });
+  }, [state, course?.title, activeModuleId, activeLessonNumber]);
+
+  useEffect(() => {
+    if (state !== 'learning' || !activeModule || !course) return;
+    const stepsForLesson = activeModuleHasStructuredLessons && typeof activeLessonNumber === 'number'
+      ? activeModule.steps.filter((s) => s.lessonNumber === activeLessonNumber)
+      : visibleModuleSteps;
+    if (!stepsForLesson.length) return;
+    const lessonDone = stepsForLesson.every((step) => isStepLearnerComplete(activeModule.id, step));
+    if (!lessonDone) return;
+    const lessonKey = `${course.title}:${activeModule.id}:${String(activeLessonNumber ?? 'all')}`;
+    if (trackedCompletedLessonRef.current === lessonKey) return;
+    trackedCompletedLessonRef.current = lessonKey;
+    void trackImpactEvent('lesson_completed', {
+      moduleId: activeModule.id,
+      lessonNumber: typeof activeLessonNumber === 'number' ? activeLessonNumber : null,
+      steps: stepsForLesson.length,
+    });
+  }, [state, course?.title, activeModule, activeModuleHasStructuredLessons, activeLessonNumber, visibleModuleSteps, interactionProgress]);
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-emerald-500/30">
       {/* Background Decor */}
@@ -2402,7 +3031,7 @@ export default function App() {
             <div className="w-8 h-8 rounded-lg overflow-hidden">
               <MascotImage mood="idle" alt="SEA-Geko" className="w-full h-full object-contain" />
             </div>
-            <span className="font-bold tracking-tight text-slate-900">SEA-Geko</span>
+            <span className="font-bold tracking-tight text-slate-900">{t('appName', locale)}</span>
             {state === 'learning' && course ? (
               <>
                 <span className="hidden md:inline text-slate-300">|</span>
@@ -2412,35 +3041,40 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
-            {state !== 'idle' && (
-              <div className="flex items-center gap-2">
-                <button 
-                  onClick={downloadCoursePack}
-                  className="text-xs text-slate-500 hover:text-slate-700 transition-colors px-3 py-1.5 border border-slate-200 rounded-full bg-white"
-                >
-                  Export
-                </button>
-                <button 
-                  onClick={triggerImportCoursePack}
-                  className="text-xs text-slate-500 hover:text-slate-700 transition-colors px-3 py-1.5 border border-slate-200 rounded-full bg-white"
-                >
-                  Import
-                </button>
-                <button 
-                  onClick={handleReset}
-                  className="text-xs text-slate-500 hover:text-slate-700 transition-colors px-3 py-1.5 border border-slate-200 rounded-full bg-white"
-                >
-                  Reset
-                </button>
-              </div>
-            )}
             <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-900/5 border border-slate-900/10 rounded-full">
               <span className={cn(
                 "w-2 h-2 rounded-full",
                 isOnline ? "bg-emerald-500" : "bg-red-500"
               )} />
-              <span className="text-xs font-bold text-slate-600">{isOnline ? "Online" : "Offline"}</span>
+              <span className="text-xs font-bold text-slate-600">{isOnline ? t('online', locale) : t('offline', locale)}</span>
             </div>
+            <div className="hidden md:flex items-center gap-2 px-2 py-1 border border-slate-200 bg-white rounded-full">
+              <label htmlFor="locale-select" className="text-[10px] uppercase tracking-widest text-slate-400 font-mono">{t('lang', locale)}</label>
+              <select
+                id="locale-select"
+                className="text-xs bg-transparent focus:outline-none"
+                value={locale}
+                onChange={(e) => setLocaleState(e.target.value as SupportedLocale)}
+                aria-label="Select language"
+              >
+                {SUPPORTED_LOCALES.map((loc) => (
+                  <option key={loc} value={loc}>{loc.toUpperCase()}</option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="button"
+              onClick={() => setLowBandwidthMode((v) => !v)}
+              aria-label="Toggle low bandwidth mode"
+              className={cn(
+                "hidden md:inline-flex text-xs font-bold px-3 py-1.5 rounded-full border transition-colors",
+                lowBandwidthMode
+                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                  : "bg-white text-slate-500 border-slate-200"
+              )}
+            >
+              {t('lowBandwidth', locale)}
+            </button>
             <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/5 border border-emerald-500/10 rounded-full">
               <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
               <span className="text-xs font-bold text-emerald-600">{points} XP</span>
@@ -2454,17 +3088,6 @@ export default function App() {
       </header>
 
       <input
-        ref={fileInputRef}
-        type="file"
-        accept="application/json"
-        className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) importCoursePack(f);
-          e.currentTarget.value = '';
-        }}
-      />
-      <input
         ref={attachmentInputRef}
         type="file"
         className="hidden"
@@ -2475,6 +3098,173 @@ export default function App() {
           e.currentTarget.value = '';
         }}
       />
+
+      <AnimatePresence>
+        {onboardingOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[120] bg-slate-900/40 backdrop-blur-sm p-4 flex items-center justify-center"
+          >
+            <div className="w-full max-w-xl bg-white rounded-3xl border border-slate-200 shadow-2xl p-6 space-y-5">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-xl font-bold text-slate-900">{t('onboardingTitle', locale)}</h3>
+                <span className="text-xs font-semibold text-slate-500">
+                  {onboardingStep + 1} / 7
+                </span>
+              </div>
+              <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                <div className="h-full bg-emerald-500 transition-all" style={{ width: `${((onboardingStep + 1) / 7) * 100}%` }} />
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                {onboardingStep === 0 && (
+                  <div className="space-y-3">
+                    <p className="text-sm font-semibold text-slate-800">{t('onboardingQuestionSegment', locale)}</p>
+                    <select
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white"
+                      value={profileDraft.userSegment}
+                      onChange={(e) => setProfileDraft((prev) => ({ ...prev, userSegment: e.target.value as UserProfile['userSegment'] }))}
+                      aria-label={t('onboardingQuestionSegment', locale)}
+                    >
+                      <option value="youth">{t('segmentYouth', locale)}</option>
+                      <option value="educator">{t('segmentEducator', locale)}</option>
+                      <option value="displaced">{t('segmentDisplaced', locale)}</option>
+                      <option value="community_org">{t('segmentCommunityOrg', locale)}</option>
+                    </select>
+                  </div>
+                )}
+
+                {onboardingStep === 1 && (
+                  <div className="space-y-3">
+                    <p className="text-sm font-semibold text-slate-800">{t('onboardingQuestionConnectivity', locale)}</p>
+                    <select
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white"
+                      value={profileDraft.connectivityLevel}
+                      onChange={(e) => setProfileDraft((prev) => ({ ...prev, connectivityLevel: e.target.value as UserProfile['connectivityLevel'] }))}
+                      aria-label={t('onboardingQuestionConnectivity', locale)}
+                    >
+                      <option value="normal">{t('connectivityNormal', locale)}</option>
+                      <option value="low_bandwidth">{t('connectivityLowBandwidth', locale)}</option>
+                      <option value="offline_first">{t('connectivityOfflineFirst', locale)}</option>
+                    </select>
+                  </div>
+                )}
+
+                {onboardingStep === 2 && (
+                  <div className="space-y-3">
+                    <p className="text-sm font-semibold text-slate-800">{t('onboardingQuestionLanguage', locale)}</p>
+                    <select
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white"
+                      value={locale}
+                      onChange={(e) => setLocaleState(e.target.value as SupportedLocale)}
+                      aria-label={t('onboardingQuestionLanguage', locale)}
+                    >
+                      {SUPPORTED_LOCALES.map((loc) => (
+                        <option key={`onboarding-${loc}`} value={loc}>{loc.toUpperCase()}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {onboardingStep === 3 && (
+                  <div className="space-y-3">
+                    <p className="text-sm font-semibold text-slate-800">{t('onboardingQuestionDevice', locale)}</p>
+                    <select
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white"
+                      value={profileDraft.deviceClass}
+                      onChange={(e) => setProfileDraft((prev) => ({ ...prev, deviceClass: e.target.value as UserProfile['deviceClass'] }))}
+                      aria-label={t('onboardingQuestionDevice', locale)}
+                    >
+                      <option value="mobile">{t('deviceMobile', locale)}</option>
+                      <option value="desktop">{t('deviceDesktop', locale)}</option>
+                      <option value="tablet">{t('deviceTablet', locale)}</option>
+                      <option value="unknown">{t('deviceUnknown', locale)}</option>
+                    </select>
+                  </div>
+                )}
+
+                {onboardingStep === 4 && (
+                  <div className="space-y-3">
+                    <p className="text-sm font-semibold text-slate-800">{t('onboardingQuestionDiscovery', locale)}</p>
+                    <select
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white"
+                      value={profileDraft.discoverySource || 'social_media'}
+                      onChange={(e) => setProfileDraft((prev) => ({ ...prev, discoverySource: e.target.value as UserProfile['discoverySource'] }))}
+                      aria-label={t('onboardingQuestionDiscovery', locale)}
+                    >
+                      <option value="social_media">{t('discovery_social_media', locale)}</option>
+                      <option value="friend">{t('discovery_friend', locale)}</option>
+                      <option value="school">{t('discovery_school', locale)}</option>
+                      <option value="community">{t('discovery_community', locale)}</option>
+                      <option value="other">{t('discovery_other', locale)}</option>
+                    </select>
+                  </div>
+                )}
+
+                {onboardingStep === 5 && (
+                  <div className="space-y-3">
+                    <p className="text-sm font-semibold text-slate-800">{t('onboardingQuestionGoal', locale)}</p>
+                    <input
+                      value={profileDraft.learningGoal}
+                      onChange={(e) => setProfileDraft((prev) => ({ ...prev, learningGoal: e.target.value }))}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white"
+                      placeholder={t('onboardingQuestionGoal', locale)}
+                      aria-label={t('onboardingQuestionGoal', locale)}
+                    />
+                  </div>
+                )}
+
+                {onboardingStep === 6 && (
+                  <div className="space-y-3">
+                    <p className="text-sm font-semibold text-slate-800">{t('onboardingQuestionRegion', locale)}</p>
+                    <input
+                      value={profileDraft.region}
+                      onChange={(e) => setProfileDraft((prev) => ({ ...prev, region: e.target.value }))}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white"
+                      placeholder={t('onboardingQuestionRegion', locale)}
+                      aria-label={t('onboardingQuestionRegion', locale)}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-slate-500">{t('account', locale)}: {accountId}</div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setOnboardingStep((prev) => Math.max(0, prev - 1))}
+                    disabled={onboardingStep === 0}
+                    className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold disabled:opacity-40"
+                  >
+                    {t('onboardingBack', locale)}
+                  </button>
+                  {onboardingStep < 6 ? (
+                    <button
+                      type="button"
+                      onClick={() => setOnboardingStep((prev) => Math.min(6, prev + 1))}
+                      className="px-4 py-2 rounded-xl bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-400"
+                    >
+                      {t('onboardingNext', locale)}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleSaveProfile}
+                      className="px-4 py-2 rounded-xl bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-400"
+                    >
+                      {t('onboardingSave', locale)}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
 
       <AnimatePresence>
         {globalError && state === 'idle' && (
@@ -2559,10 +3349,326 @@ export default function App() {
 
       <main className={cn(
         "relative z-10 mx-auto px-4 md:px-6 py-8 md:py-12",
-        state === 'learning' ? "max-w-[1700px]" : "max-w-5xl"
+        state === 'learning' ? "max-w-[1700px]" : "max-w-7xl"
       )}>
-        <AnimatePresence mode="wait">
-          {state === 'idle' && (
+        {state === 'idle' ? (
+          <div className="grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)] gap-5 items-start">
+            <aside className="lg:sticky lg:top-24 rounded-3xl border border-cyan-900/40 bg-gradient-to-b from-slate-950 via-slate-900 to-cyan-950 p-3 shadow-2xl shadow-cyan-950/20">
+              <div className="space-y-2">
+                {[
+                  { key: 'learn' as const, icon: Home, label: t('navLearn', locale) },
+                  { key: 'community' as const, icon: Users, label: t('navCommunity', locale) },
+                  { key: 'leaderboard' as const, icon: Trophy, label: t('navLeaderboard', locale) },
+                  { key: 'profile' as const, icon: UserCircle2, label: t('navProfile', locale) },
+                  { key: 'downloads' as const, icon: Download, label: t('navDownloads', locale) },
+                ].map((item) => {
+                  const Icon = item.icon;
+                  const active = activeHomeTab === item.key;
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => setActiveHomeTab(item.key)}
+                      className={cn(
+                        "w-full rounded-2xl px-4 py-3 flex items-center gap-3 border transition-colors",
+                        active
+                          ? "bg-cyan-500/10 border-cyan-400 text-cyan-300"
+                          : "bg-white/0 border-transparent text-slate-200 hover:bg-white/5 hover:border-cyan-900/70"
+                      )}
+                    >
+                      <Icon className="w-4 h-4 shrink-0" />
+                      <span className="text-sm font-bold tracking-wide">{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </aside>
+
+            <div className="min-w-0">
+              <AnimatePresence mode="wait">
+                {activeHomeTab === 'profile' && (
+                  <motion.div
+                    key="profile-tab"
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -16 }}
+                    className="space-y-4"
+                  >
+                    <section className="rounded-2xl border border-slate-200 bg-white p-5">
+                      <h2 className="text-xl font-bold text-slate-900">{t('profileStats', locale)}</h2>
+                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-xs text-slate-500">{t('skillGain', locale)}</p>
+                          <p className="text-lg font-bold text-slate-900">{impactMetrics.skillGainPp.toFixed(1)} pp</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-xs text-slate-500">{t('confidenceGain', locale)}</p>
+                          <p className="text-lg font-bold text-slate-900">{impactMetrics.confidenceGain.toFixed(1)}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-xs text-slate-500">{t('completionRate', locale)}</p>
+                          <p className="text-lg font-bold text-slate-900">{Math.round(impactMetrics.completionRate * 100)}%</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-xs text-slate-500">{t('downloadedCourses', locale)}</p>
+                          <p className="text-lg font-bold text-slate-900">{downloadStates.length}</p>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="rounded-2xl border border-slate-200 bg-white p-5">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="text-lg font-bold text-slate-900">{t('createdCourses', locale)}</h3>
+                        {course ? (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handlePublishCourse('private')}
+                              className="text-xs rounded-lg border border-slate-200 px-3 py-1.5 bg-slate-50 hover:bg-slate-100"
+                            >
+                              {t('publishPrivate', locale)}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handlePublishCourse('public')}
+                              className="text-xs rounded-lg border border-emerald-200 px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                            >
+                              {t('publishPublic', locale)}
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      {myCourses.length ? (
+                        <div className="mt-4 grid grid-cols-1 xl:grid-cols-2 gap-4">
+                          {myCourses.map((post) => {
+                            const metrics = analyticsByCourse[post.courseId] || DEFAULT_IMPACT;
+                            const completionPct = Math.round(metrics.completionRate * 100);
+                            return (
+                              <article key={post.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-bold text-slate-900 line-clamp-2">{post.title}</p>
+                                    <p className="text-xs text-slate-500 line-clamp-2 mt-1">{post.description || post.courseId}</p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleCourseVisibility(post)}
+                                    className={cn(
+                                      "text-xs rounded-lg border px-2.5 py-1.5 font-semibold",
+                                      post.visibility === 'public'
+                                        ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                                        : "bg-slate-100 border-slate-200 text-slate-600"
+                                    )}
+                                  >
+                                    {post.visibility === 'public' ? t('visibilityPublic', locale) : t('visibilityPrivate', locale)}
+                                  </button>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                  <div className="rounded-lg border border-slate-200 bg-white p-2">
+                                    <p className="text-slate-500">{t('skillGain', locale)}</p>
+                                    <p className="font-bold text-slate-900">{metrics.skillGainPp.toFixed(1)} pp</p>
+                                  </div>
+                                  <div className="rounded-lg border border-slate-200 bg-white p-2">
+                                    <p className="text-slate-500">{t('completionRate', locale)}</p>
+                                    <p className="font-bold text-slate-900">{completionPct}%</p>
+                                  </div>
+                                  <div className="rounded-lg border border-slate-200 bg-white p-2">
+                                    <p className="text-slate-500">{t('downloadedCourses', locale)}</p>
+                                    <p className="font-bold text-slate-900">{post.saves || 0}</p>
+                                  </div>
+                                  <div className="rounded-lg border border-slate-200 bg-white p-2">
+                                    <p className="text-slate-500">{t('comments', locale)}</p>
+                                    <p className="font-bold text-slate-900">{post.comments || 0}</p>
+                                  </div>
+                                </div>
+
+                                <div className="rounded-xl border border-slate-200 bg-white p-3">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <BarChart3 className="w-4 h-4 text-slate-500" />
+                                    <p className="text-xs font-semibold text-slate-600">{t('analyticsOverview', locale)}</p>
+                                  </div>
+                                  <div className="grid grid-cols-4 gap-2 h-16 items-end">
+                                    <div className="rounded-md bg-emerald-100">
+                                      <div className="rounded-md bg-emerald-500 w-full" style={{ height: `${Math.min(100, Math.max(4, metrics.skillGainPp * 12))}%` }} />
+                                    </div>
+                                    <div className="rounded-md bg-cyan-100">
+                                      <div className="rounded-md bg-cyan-500 w-full" style={{ height: `${Math.min(100, Math.max(4, metrics.confidenceGain * 20))}%` }} />
+                                    </div>
+                                    <div className="rounded-md bg-indigo-100">
+                                      <div className="rounded-md bg-indigo-500 w-full" style={{ height: `${Math.min(100, Math.max(4, completionPct))}%` }} />
+                                    </div>
+                                    <div className="rounded-md bg-orange-100">
+                                      <div className="rounded-md bg-orange-500 w-full" style={{ height: `${Math.min(100, Math.max(4, (post.saves || 0) * 15))}%` }} />
+                                    </div>
+                                  </div>
+                                </div>
+                              </article>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-slate-500 mt-3">{t('noCreatedCourses', locale)}</p>
+                      )}
+                    </section>
+
+                    {communityError ? <p className="text-xs text-red-600">{communityError}</p> : null}
+                    {communityNotice ? <p className="text-xs text-emerald-700">{communityNotice}</p> : null}
+                  </motion.div>
+                )}
+
+                {activeHomeTab === 'downloads' && (
+            <motion.div
+              key="downloads-tab"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -16 }}
+              className="max-w-4xl mx-auto"
+            >
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 md:p-5">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-slate-800">{t('downloadedInAccount', locale)}</p>
+                  <span className="text-xs text-slate-400">{accountId}</span>
+                </div>
+                <div className="mt-3 space-y-2 max-h-[50vh] overflow-auto">
+                  {downloadStates.length ? downloadStates.map((row) => (
+                    <button
+                      key={`${row.courseId}:${row.snapshotVersion}`}
+                      type="button"
+                      onClick={() => handleOpenDownloadedCourse(row)}
+                      className="w-full text-left rounded-xl border border-slate-200 px-3 py-2 hover:bg-slate-50 transition-colors"
+                    >
+                      <div className="text-sm font-semibold text-slate-800">{row.title || row.courseId}</div>
+                      <div className="text-[11px] text-slate-500">
+                        v{row.snapshotVersion} - {Math.max(1, Math.round(row.sizeBytes / 1024))} KB - {new Date(row.downloadedAt).toLocaleString()}
+                      </div>
+                    </button>
+                  )) : (
+                    <p className="text-sm text-slate-500">{t('noDownloadsYet', locale)}</p>
+                  )}
+                </div>
+              </section>
+              {downloadError ? <p className="mt-2 text-xs text-red-600">{downloadError}</p> : null}
+            </motion.div>
+          )}
+
+                {activeHomeTab === 'community' && (
+            <motion.div
+              key="community-tab"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -16 }}
+              className="space-y-4"
+            >
+              <section className="rounded-2xl border border-slate-200 bg-white p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-lg font-bold text-slate-900">{t('communityFeed', locale)}</h2>
+                  <button
+                    type="button"
+                    onClick={() => refreshCoursePanels(true)}
+                    className="text-xs rounded-lg border border-slate-200 px-3 py-1.5 bg-slate-50 hover:bg-slate-100"
+                  >
+                    {t('refresh', locale)}
+                  </button>
+                </div>
+              </section>
+
+              {publicFeed.length ? (
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                  {publicFeed.map((post) => (
+                    <article key={post.id} className="rounded-2xl overflow-hidden border border-slate-200 bg-[#0b1220] text-slate-100 shadow-lg">
+                      <div className="h-40 bg-gradient-to-r from-cyan-500/20 via-blue-500/20 to-emerald-500/20 px-4 py-4 flex items-end">
+                        <div>
+                          <p className="text-xs uppercase tracking-widest text-cyan-200">{post.ownerId}</p>
+                          <h3 className="text-lg font-bold text-white line-clamp-2">{post.title}</h3>
+                        </div>
+                      </div>
+                      <div className="p-4 space-y-3">
+                        <p className="text-sm text-slate-300 line-clamp-2">{post.description || post.courseId}</p>
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          <button type="button" onClick={() => handleReactToPost(post.id)} className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-2.5 py-1.5 hover:bg-white/5">
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>{t('react', locale)} {post.reactions}</span>
+                          </button>
+                          <button type="button" onClick={() => handleSharePost(post)} className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-2.5 py-1.5 hover:bg-white/5">
+                            <Share2 className="w-3.5 h-3.5" />
+                            <span>{t('share', locale)}</span>
+                          </button>
+                          <button type="button" onClick={() => handleDownloadPostCourse(post)} className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-2.5 py-1.5 hover:bg-white/5">
+                            <Download className="w-3.5 h-3.5" />
+                            <span>{t('download', locale)}</span>
+                          </button>
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold text-slate-200">{t('comments', locale)}</p>
+                          <div className="space-y-1.5 max-h-28 overflow-auto">
+                            {(commentsByPost[post.id] || []).slice(0, 3).map((row) => (
+                              <p key={row.id} className="text-xs text-slate-300 bg-white/5 rounded-lg px-2 py-1.5">
+                                <span className="text-slate-400">{row.accountId}: </span>{row.text}
+                              </p>
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              value={commentDraftByPost[post.id] || ''}
+                              onChange={(e) => setCommentDraftByPost((prev) => ({ ...prev, [post.id]: e.target.value }))}
+                              placeholder={t('writeComment', locale)}
+                              className="flex-1 rounded-lg border border-slate-700 bg-slate-900/70 px-2.5 py-1.5 text-xs text-slate-100 placeholder:text-slate-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleCommentOnPost(post.id)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-cyan-600 bg-cyan-500/10 px-2.5 py-1.5 text-xs text-cyan-300 hover:bg-cyan-500/20"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5" />
+                              <span>{t('send', locale)}</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">{t('noPublicCourses', locale)}</p>
+              )}
+
+              {communityError ? <p className="text-xs text-red-600">{communityError}</p> : null}
+              {communityNotice ? <p className="text-xs text-emerald-700">{communityNotice}</p> : null}
+            </motion.div>
+          )}
+
+                {activeHomeTab === 'leaderboard' && (
+            <motion.div
+              key="leaderboard-tab"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -16 }}
+              className="max-w-3xl mx-auto"
+            >
+              <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                <h2 className="text-xl font-bold text-slate-900">{t('leaderboardTitle', locale)}</h2>
+                <p className="text-sm text-slate-500 mt-1">{t('leaderboardSubtitle', locale)}</p>
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs text-slate-500">{t('totalXp', locale)}</p>
+                    <p className="text-lg font-bold text-slate-900">{points}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs text-slate-500">{t('dayStreak', locale)}</p>
+                    <p className="text-lg font-bold text-slate-900">{streak}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs text-slate-500">{t('globalRank', locale)}</p>
+                    <p className="text-lg font-bold text-slate-900">#{Math.max(1, 1000 - (points + streak))}</p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+                {activeHomeTab === 'learn' && (
             <motion.div 
               key="idle"
               initial={{ opacity: 0, y: 20 }}
@@ -2574,11 +3680,10 @@ export default function App() {
                 <MascotImage mood="idle" alt="SEA-Geko mascot" className="w-14 h-14 rounded-2xl object-contain" />
               </div>
               <h1 className="text-6xl md:text-8xl font-bold tracking-tighter mb-6 bg-gradient-to-b from-slate-900 to-slate-600 bg-clip-text text-transparent">
-                What do you want to <br /> master today?
+                {t('heroTitleLine1', locale)} <br /> {t('heroTitleLine2', locale)}
               </h1>
               <p className="text-xl text-slate-500 mb-12 max-w-2xl">
-                SEA-Geko crafts personalized, interactive learning paths in seconds. 
-                Enter a topic to begin your journey.
+                {t('heroSubtitle', locale)}
               </p>
               
               <div className="w-full max-w-4xl">
@@ -2689,7 +3794,7 @@ export default function App() {
                       className="relative overflow-hidden px-8 py-3 md:py-4 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-70 disabled:cursor-wait text-white font-bold rounded-2xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 flex-shrink-0"
                     >
                       {isAutoDraftingOutline ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-                      {isAutoDraftingOutline ? 'Drafting...' : 'Generate'}
+                      {isAutoDraftingOutline ? t('generating', locale) : t('generate', locale)}
                       {isAutoDraftingOutline ? (
                         <motion.span
                           initial={{ x: '-110%' }}
@@ -2934,7 +4039,11 @@ export default function App() {
 
             </motion.div>
           )}
-
+              </AnimatePresence>
+            </div>
+          </div>
+        ) : (
+          <AnimatePresence mode="wait">
           {state === 'assessing' && assessment.length === 0 && (
             <motion.div 
               key="assessing-loading"
@@ -2945,10 +4054,10 @@ export default function App() {
               {!globalError && !retryInfo && <Loader2 className="w-12 h-12 text-emerald-500 animate-spin mb-8" />}
               
               <h2 className="text-4xl font-bold text-slate-900 mb-4">
-                {globalError ? "Assessment Paused" : "Preparing your assessment..."}
+                {globalError ? t('assessmentPaused', locale) : t('preparingAssessment', locale)}
               </h2>
               <p className="text-slate-500 text-lg mb-12">
-                {globalError ? "We encountered an issue while tailoring your questions." : "Tailoring questions to your specific goals."}
+                {globalError ? t('assessmentErrorSub', locale) : t('preparingAssessmentSub', locale)}
               </p>
               
               {retryInfo && (
@@ -3167,17 +4276,17 @@ export default function App() {
 	                <div className="h-full rounded-[28px] border border-slate-200 bg-white shadow-sm overflow-hidden flex flex-col">
 	                  <div className="grid grid-cols-2 border-b border-slate-200 bg-slate-50">
 	                    <div className="px-4 py-3 text-sm font-semibold text-slate-900 border-b-2 border-emerald-500 bg-white">
-	                      Course Outline
+	                      {t('courseOutline', locale)}
 	                    </div>
 	                    <div className="px-4 py-3 text-sm font-medium text-slate-400">
-	                      Resources
+	                      {t('resources', locale)}
 	                    </div>
 	                  </div>
 
 	                  <div className="p-3 border-b border-slate-100">
 	                    <input
 	                      type="text"
-	                      placeholder="Search course outline"
+	                      placeholder={t('searchCourseOutline', locale)}
 	                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-200"
 	                    />
 	                  </div>
@@ -3185,7 +4294,7 @@ export default function App() {
 	                  <div className="px-3 py-3 border-b border-slate-100 bg-emerald-50/40 flex items-center gap-3">
 	                    <MascotImage mood="idle" alt="SEA-Geko helper" className="w-12 h-12 rounded-xl object-contain" />
 	                    <div className="flex-1 min-w-0">
-	                      <p className="text-[10px] font-mono uppercase tracking-widest text-emerald-700">Course Progress</p>
+	                      <p className="text-[10px] font-mono uppercase tracking-widest text-emerald-700">{t('courseProgress', locale)}</p>
 	                      <p className="text-xs text-slate-600 mt-1">{overallProgress.completed}/{overallProgress.total} sub-contents completed</p>
 	                      <div className="mt-2 h-1.5 bg-emerald-100 rounded-full overflow-hidden">
 	                        <div className="h-full bg-emerald-500" style={{ width: `${overallProgress.percent}%` }} />
@@ -3386,7 +4495,7 @@ export default function App() {
 	                  {isGeneratingModules && (
 	                    <div className="m-2 p-3 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center gap-3">
 	                      <Sparkles className="w-4 h-4 text-indigo-500" />
-	                      <span className="text-xs text-indigo-600 font-medium">Planning module structure...</span>
+	                      <span className="text-xs text-indigo-600 font-medium">{t('planningModuleStructure', locale)}</span>
 	                    </div>
 	                  )}
 	                </div>
@@ -3423,7 +4532,7 @@ export default function App() {
 
                       <div className="rounded-2xl border border-emerald-100 bg-white p-4 flex flex-col md:flex-row gap-4 md:items-center md:justify-between">
                         <div>
-                          <p className="text-[10px] font-mono uppercase tracking-widest text-emerald-700">Module Progress</p>
+                          <p className="text-[10px] font-mono uppercase tracking-widest text-emerald-700">{t('moduleProgress', locale)}</p>
                           <p className="text-sm text-slate-600 mt-1">
                             {activeModuleProgress.completed}/{activeModuleProgress.total} sub-contents completed ({activeModuleProgress.percent}%)
                           </p>
@@ -3438,9 +4547,9 @@ export default function App() {
                           <div className="p-6 bg-slate-50 rounded-3xl mb-8">
                             <AlertCircle className="w-16 h-16 text-slate-200" />
                           </div>
-                          <h3 className="text-2xl font-bold text-slate-900 mb-3">This module isn’t ready yet</h3>
+                          <h3 className="text-2xl font-bold text-slate-900 mb-3">This module is not ready yet</h3>
                           <p className="text-slate-500 max-w-md">
-                            We couldn’t generate the module lesson steps (usually due to rate limits).
+                            We could not generate the module lesson steps (usually due to rate limits).
                             Try again, or switch to the sample course.
                           </p>
                           <div className="mt-8 flex items-center gap-3">
@@ -3631,6 +4740,7 @@ export default function App() {
                                     </div>
                                     <Quiz 
                                       key={`quiz-${activeModule.id}-${step.id}`}
+                                      topicLabel={stripStructuredStepPrefix(String(content?.title || step.title || '').replace(/^quiz\s*:\s*/i, '').trim())}
                                       questions={Array.isArray(content.data.questions) ? content.data.questions : []} 
                                       onComplete={({ passed, score, percentage }) => {
                                         const isFinalAssessment = activeModule.steps[activeModule.steps.length - 1]?.id === step.id;
@@ -3738,16 +4848,28 @@ export default function App() {
                               <>
                                 <div className="flex justify-end mt-6">
                                   <button
+                                    type="button"
+                                    disabled={!isOnline}
                                     onClick={() => setEditingStepId(editingStepId === step.id ? null : step.id)}
-                                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-emerald-600 hover:border-emerald-500/50 transition-all text-[10px] font-mono uppercase tracking-widest font-bold shadow-sm"
+                                    className={cn(
+                                      "flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white border transition-all text-[10px] font-mono uppercase tracking-widest font-bold shadow-sm",
+                                      isOnline
+                                        ? "border-slate-200 text-slate-400 hover:text-emerald-600 hover:border-emerald-500/50"
+                                        : "border-slate-200 text-slate-300 cursor-not-allowed"
+                                    )}
                                   >
                                     <Edit3 className="w-3.5 h-3.5" />
-                                    Refine Content
+                                    {isOnline ? 'Refine Content' : 'AI Edit (Online only)'}
                                   </button>
                                 </div>
+                                {!isOnline && editingStepId === step.id ? (
+                                  <p className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-3">
+                                    {t('offlineLearningOnly', locale)}
+                                  </p>
+                                ) : null}
 
                                 <AnimatePresence>
-                                  {editingStepId === step.id && (
+                                  {editingStepId === step.id && isOnline && (
                                     <ContentEditor 
                                       content={content}
                                       onUpdate={(newContent) => handleUpdateStepContent(activeModule.id, step.id, newContent)}
@@ -3767,7 +4889,7 @@ export default function App() {
                       <div className="p-6 bg-slate-50 rounded-3xl mb-8">
                         <BookOpen className="w-16 h-16 text-slate-200" />
                       </div>
-                      <h3 className="text-3xl font-bold text-slate-900 mb-4">Select a module to begin</h3>
+                      <h3 className="text-3xl font-bold text-slate-900 mb-4">{t('selectModuleToBegin', locale)}</h3>
                       <p className="text-slate-500 max-w-sm text-lg leading-relaxed">
                         Dive into the interactive lessons and challenges generated specifically for your goals.
                       </p>
@@ -3778,6 +4900,7 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
+        )}
       </main>
     </div>
   );

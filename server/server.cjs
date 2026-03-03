@@ -42,6 +42,8 @@ const PORT = Number(process.env.PORT || 8787);
 const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'dist');
 const CACHE_DIR = path.join(__dirname, '.cache');
+const APP_DATA_DIR = path.join(__dirname, '.data');
+const APP_DB_PATH = path.join(APP_DATA_DIR, 'app-db.json');
 const MEM_CACHE = new Map();
 let DISK_CACHE_ENABLED = true;
 const MODULE_VIDEO_REGISTRY = new Map();
@@ -51,6 +53,51 @@ try {
   if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 } catch {
   DISK_CACHE_ENABLED = false;
+}
+
+function defaultAppDb() {
+  return {
+    profiles: [],
+    pretests: [],
+    posttests: [],
+    confidence: [],
+    events: [],
+    publicPosts: [],
+    reactions: [],
+    comments: [],
+    reports: [],
+    cohorts: [],
+    cohortMembers: [],
+  };
+}
+
+function loadAppDb() {
+  try {
+    if (!fs.existsSync(APP_DATA_DIR)) fs.mkdirSync(APP_DATA_DIR, { recursive: true });
+    if (!fs.existsSync(APP_DB_PATH)) {
+      const initial = defaultAppDb();
+      fs.writeFileSync(APP_DB_PATH, JSON.stringify(initial, null, 2), 'utf8');
+      return initial;
+    }
+    const raw = fs.readFileSync(APP_DB_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    return { ...defaultAppDb(), ...(parsed || {}) };
+  } catch {
+    return defaultAppDb();
+  }
+}
+
+function saveAppDb(db) {
+  try {
+    if (!fs.existsSync(APP_DATA_DIR)) fs.mkdirSync(APP_DATA_DIR, { recursive: true });
+    fs.writeFileSync(APP_DB_PATH, JSON.stringify(db, null, 2), 'utf8');
+  } catch {
+    // ignore persistence errors
+  }
+}
+
+function nowIso() {
+  return new Date().toISOString();
 }
 
 // ------------------------ utils ------------------------
@@ -137,6 +184,56 @@ function cacheSet(key, value) {
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function normalizeProfileContext(profile) {
+  const p = profile && typeof profile === 'object' ? profile : {};
+  const connectivityLevel = ['offline_first', 'low_bandwidth', 'normal'].includes(String(p.connectivityLevel))
+    ? String(p.connectivityLevel)
+    : 'normal';
+  const userSegment = ['youth', 'educator', 'displaced', 'community_org'].includes(String(p.userSegment))
+    ? String(p.userSegment)
+    : 'youth';
+  const preferredLanguage = String(p.preferredLanguage || 'en').toLowerCase();
+  return {
+    userSegment,
+    connectivityLevel,
+    preferredLanguage,
+    learningGoal: String(p.learningGoal || ''),
+    region: String(p.region || 'ASEAN'),
+    lowBandwidthMode: !!p.lowBandwidthMode || connectivityLevel !== 'normal',
+  };
+}
+
+function profileRulesText(profileContext = {}) {
+  const p = normalizeProfileContext(profileContext);
+  const lines = [
+    `- Audience segment: ${p.userSegment}`,
+    `- Connectivity level: ${p.connectivityLevel}`,
+    `- Output language code: ${p.preferredLanguage}`,
+    `- Region: ${p.region}`,
+  ];
+
+  if (p.userSegment === 'educator') {
+    lines.push('- Add short facilitation tips and practical classroom/community guidance.');
+  }
+  if (p.userSegment === 'community_org') {
+    lines.push('- Include practical checkpoints and community-facing action items.');
+  }
+  if (p.userSegment === 'displaced') {
+    lines.push('- Keep trauma-aware, clear, and low-friction language; avoid heavy assumptions about stable internet access.');
+  }
+  if (p.lowBandwidthMode) {
+    lines.push('- Prefer text-first explanations and lightweight activities. Minimize video dependency.');
+  }
+
+  return lines.join('\n');
+}
+
+function safePercent(n) {
+  const v = Number(n || 0);
+  if (!Number.isFinite(v)) return 0;
+  return Math.max(0, Math.min(100, v));
 }
 
 const PROGRAMMING_TOPIC_PATTERN = /\b(python|javascript|typescript|java|c\+\+|c#|ruby|php|swift|kotlin|golang|go|rust|sql|html|css|react|node|node\.js|django|flask|spring|programming|coding|developer|software|frontend|backend|fullstack|web app|mobile app|algorithm|data structure|devops|api|database|computer science|cybersecurity|machine learning|deep learning|artificial intelligence)\b/i;
@@ -358,6 +455,97 @@ function isPlaceholderQuizOption(option) {
   return !o || /^[a-d]$/.test(o) || /^option\s*[a-d0-9]+$/.test(o);
 }
 
+function normalizeFlashcardKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[`*_#()[\]{}<>.,;:!?/\\-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractFlashcardKeysFromReference(referenceContext) {
+  const keys = new Set();
+  const text = String(referenceContext || '');
+  if (!text) return keys;
+
+  for (const line of text.split('\n')) {
+    if (!/flashcard/i.test(line)) continue;
+    const section = line.includes(':') ? line.split(':').slice(1).join(':') : line;
+    const parts = section.split(';');
+    for (const part of parts) {
+      const front = String(part || '').split(':')[0].trim();
+      const key = normalizeFlashcardKey(front);
+      if (key) keys.add(key);
+    }
+  }
+  return keys;
+}
+
+function buildFallbackFlashcards(topic, seenKeys, count = 4) {
+  const topicName = String(topic || '').replace(/^flashcards\s*:?\s*/i, '').trim() || 'This topic';
+  const candidates = [
+    { front: `${topicName} Overview`, back: `A concise summary of ${topicName} and why it matters.` },
+    { front: `${topicName} Key Concept`, back: `The main principle learners should remember for ${topicName}.` },
+    { front: `${topicName} Practical Use`, back: `A real scenario where ${topicName} is applied.` },
+    { front: `${topicName} Common Pitfall`, back: `A frequent mistake in ${topicName} and how to avoid it.` },
+    { front: `${topicName} Quick Recall`, back: `A short memory cue to revise ${topicName}.` },
+  ];
+
+  const out = [];
+  for (const card of candidates) {
+    if (out.length >= count) break;
+    const key = normalizeFlashcardKey(card.front);
+    if (!key || seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    out.push(card);
+  }
+
+  let cursor = 1;
+  while (out.length < count) {
+    const front = `${topicName} Insight ${cursor}`;
+    const back = `A focused takeaway (${cursor}) that reinforces ${topicName}.`;
+    const key = normalizeFlashcardKey(front);
+    cursor += 1;
+    if (!key || seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    out.push({ front, back });
+  }
+
+  return out;
+}
+
+function sanitizeFlashcards(cards, topicHint, blockedKeys = new Set()) {
+  const used = new Set(blockedKeys);
+  const out = [];
+
+  for (const card of Array.isArray(cards) ? cards : []) {
+    if (out.length >= 6) break;
+    const front = String(card?.front || '').trim().slice(0, 80);
+    const back = String(card?.back || '').trim();
+    if (!front || !back) continue;
+    const frontKey = normalizeFlashcardKey(front);
+    const pairKey = `${frontKey}::${normalizeFlashcardKey(back).slice(0, 120)}`;
+    if (!frontKey || used.has(frontKey) || used.has(pairKey)) continue;
+
+    used.add(frontKey);
+    used.add(pairKey);
+    out.push({
+      front,
+      back,
+      icon: card?.icon,
+      imageUrl: /^https?:\/\//i.test(String(card?.imageUrl || '')) ? card.imageUrl : '',
+      cardType: card?.cardType,
+    });
+  }
+
+  if (out.length < 4) {
+    const fillers = buildFallbackFlashcards(topicHint, used, 4 - out.length);
+    out.push(...fillers);
+  }
+
+  return out.slice(0, 6);
+}
+
 function validateStepContent(type, obj) {
   const safe = (v, d) => (v === undefined || v === null ? d : v);
 
@@ -375,13 +563,7 @@ function validateStepContent(type, obj) {
   if (type === 'FLIP_CARD') {
     const cards = Array.isArray(obj?.data?.cards) ? obj.data.cards : [];
     base.data = {
-      cards: cards.slice(0, 6).map((c) => ({
-        front: String(safe(c.front, '')).slice(0, 80),
-        back: String(safe(c.back, '')),
-        icon: c.icon,
-        imageUrl: /^https?:\/\//i.test(String(c.imageUrl || '')) ? c.imageUrl : '',
-        cardType: c.cardType,
-      }))
+      cards: sanitizeFlashcards(cards, safe(obj?.title, 'Flashcards'))
     };
     if (!base.data.cards.length) {
       base.data.cards = [
@@ -893,10 +1075,54 @@ async function routeText(router, prompt, cacheKey, ttlMs = 7 * 24 * 60 * 60 * 10
 
 // ------------------------ YouTube helper (optional) ------------------------
 
+function parseIsoDurationSeconds(value) {
+  const text = String(value || '').trim();
+  if (!text) return 0;
+  const m = text.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i);
+  if (!m) return 0;
+  const h = Number.parseInt(m[1] || '0', 10);
+  const min = Number.parseInt(m[2] || '0', 10);
+  const sec = Number.parseInt(m[3] || '0', 10);
+  return (h * 3600) + (min * 60) + sec;
+}
+
+function buildVideoQueryTokens(query) {
+  const stop = new Set([
+    'the', 'and', 'for', 'with', 'this', 'that', 'from', 'module', 'lesson', 'step',
+    'tutorial', 'course', 'video', 'youtube', 'guide', 'intro', 'basics'
+  ]);
+  return Array.from(new Set(
+    String(query || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]+/g, ' ')
+      .split(/\s+/)
+      .map((w) => w.trim())
+      .filter((w) => w.length >= 3)
+      .filter((w) => !stop.has(w))
+  )).slice(0, 8);
+}
+
+function computeTextRelevanceScore(text, tokens) {
+  if (!Array.isArray(tokens) || !tokens.length) return 0;
+  const hay = String(text || '').toLowerCase();
+  let score = 0;
+  for (const token of tokens) {
+    if (hay.includes(token)) score += 1;
+  }
+  return score;
+}
+
+function isLikelyYouTubeShort(title, durationSeconds = 0) {
+  const t = String(title || '').toLowerCase();
+  if (/#shorts?\b/.test(t) || /\bshorts?\b/.test(t)) return true;
+  return durationSeconds > 0 && durationSeconds <= 180;
+}
+
 async function youtubeSearchEmbed(query, excludeIds = []) {
   try {
     const key = process.env.YOUTUBE_API_KEY;
     if (!key) return null;
+    const queryTokens = buildVideoQueryTokens(query);
 
     // 1) Search a few candidates
     const searchUrl = new URL('https://www.googleapis.com/youtube/v3/search');
@@ -940,7 +1166,25 @@ async function youtubeSearchEmbed(query, excludeIds = []) {
       return true;
     });
 
-    for (const it of embeddable) {
+    const ranked = embeddable
+      .map((it) => {
+        const id = normalizeYoutubeVideoId(it?.id);
+        const title = String(it?.snippet?.title || '').trim();
+        const description = String(it?.snippet?.description || '').trim();
+        const durationSeconds = parseIsoDurationSeconds(it?.contentDetails?.duration);
+        const relevance = computeTextRelevanceScore(`${title} ${description}`, queryTokens);
+        const short = isLikelyYouTubeShort(title, durationSeconds);
+        return { id, title, relevance, short, durationSeconds };
+      })
+      .filter((it) => !!it.id)
+      .filter((it) => queryTokens.length === 0 || it.relevance > 0)
+      .sort((a, b) => {
+        if (a.short !== b.short) return a.short ? 1 : -1;
+        if (a.relevance !== b.relevance) return b.relevance - a.relevance;
+        return b.durationSeconds - a.durationSeconds;
+      });
+
+    for (const it of ranked) {
       const id = it?.id;
       if (!id) continue;
       const web = `https://www.youtube.com/watch?v=${id}`;
@@ -951,7 +1195,7 @@ async function youtubeSearchEmbed(query, excludeIds = []) {
       return {
         videoUrl: `https://www.youtube-nocookie.com/embed/${id}`,
         videoWebUrl: web,
-        videoTitle: it?.snippet?.title || 'Video',
+        videoTitle: it?.title || 'Video',
       };
     }
 
@@ -963,6 +1207,7 @@ async function youtubeSearchEmbed(query, excludeIds = []) {
 
 async function youtubeSearchEmbedNoKey(query, excludeIds = []) {
   try {
+    const queryTokens = buildVideoQueryTokens(query);
     const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
     const r = await fetchJson(searchUrl, {
       method: 'GET',
@@ -984,18 +1229,37 @@ async function youtubeSearchEmbedNoKey(query, excludeIds = []) {
     }
     if (!ids.length) return null;
 
+    const candidates = [];
     for (const id of ids) {
       const web = `https://www.youtube.com/watch?v=${id}`;
       const oembed = `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(web)}`;
       const oe = await fetchJson(oembed, { method: 'GET' }, 8000);
       if (!oe.ok) continue;
+      const title = String(oe.json?.title || 'Video').trim();
+      const relevance = computeTextRelevanceScore(title, queryTokens);
+      if (queryTokens.length && relevance <= 0) continue;
+      candidates.push({
+        id,
+        title,
+        relevance,
+        short: isLikelyYouTubeShort(title, 0),
+      });
+    }
 
+    candidates.sort((a, b) => {
+      if (a.short !== b.short) return a.short ? 1 : -1;
+      return b.relevance - a.relevance;
+    });
+
+    const best = candidates[0];
+    if (best) {
       return {
-        videoUrl: `https://www.youtube-nocookie.com/embed/${id}`,
-        videoWebUrl: web,
-        videoTitle: oe.json?.title || 'Video',
+        videoUrl: `https://www.youtube-nocookie.com/embed/${best.id}`,
+        videoWebUrl: `https://www.youtube.com/watch?v=${best.id}`,
+        videoTitle: best.title || 'Video',
       };
     }
+
     return null;
   } catch {
     return null;
@@ -1018,35 +1282,50 @@ function curatedVideo(topicText) {
 
 // ------------------------ prompt builders ------------------------
 
-function promptAssessment(topic) {
-  return `Return ONLY valid JSON (no markdown, no extra text).\n\nTask: Generate 3-4 short assessment questions to understand a learner's current level and goals for: ${topic}.\n\nJSON format: an array of objects with: id (string), question (string), type ('text' or 'choice'), options (optional array of strings).`;
+function promptAssessment(topic, profileContext = {}) {
+  const profileRules = profileRulesText(profileContext);
+  return `Return ONLY valid JSON (no markdown, no extra text).\n\nTask: Generate 3-4 short assessment questions to understand a learner's current level and goals for: ${topic}.\n\nProfile constraints:\n${profileRules}\n\nJSON format: an array of objects with: id (string), question (string), type ('text' or 'choice'), options (optional array of strings).`;
 }
 
-function promptCourseOutline(topic, answers) {
+function promptCourseOutline(topic, answers, profileContext = {}) {
   const context = Object.entries(answers || {}).map(([q, a]) => `Q: ${q}\nA: ${a}`).join('\n\n');
-  return `Return ONLY valid JSON.\n\nCreate a professional 4-module course outline for: ${topic}.\nUse the learner context below.\n\n${context}\n\nJSON format:\n{\n  "title": string,\n  "description": string,\n  "modules": [{"id": string, "title": string, "description": string}]\n}`;
+  const profileRules = profileRulesText(profileContext);
+  return `Return ONLY valid JSON.\n\nCreate a professional 4-module course outline for: ${topic}.\nUse the learner context below.\n\n${context}\n\nProfile constraints:\n${profileRules}\n\nJSON format:\n{\n  "title": string,\n  "description": string,\n  "modules": [{"id": string, "title": string, "description": string}]\n}`;
 }
 
-function promptLessonPlan(courseTitle, moduleTitle, moduleDesc) {
+function promptLessonPlan(courseTitle, moduleTitle, moduleDesc, profileContext = {}) {
+  const normalizedProfile = normalizeProfileContext(profileContext);
   const programmingTrack = isProgrammingTopic(courseTitle, moduleTitle, moduleDesc);
-  const step5Type = programmingTrack ? 'CODE_BUILDER' : 'ACCORDION';
+  const lowBandwidth = normalizedProfile.lowBandwidthMode;
+  const step5Type = programmingTrack && !lowBandwidth ? 'CODE_BUILDER' : 'ACCORDION';
   const step5Rule = programmingTrack
-    ? '- Step5 CODE_BUILDER (only for programming/software topics)'
+    ? (lowBandwidth
+      ? '- Step5 ACCORDION or LEARNING_CARD (low bandwidth mode, no heavy coding mini-game)'
+      : '- Step5 CODE_BUILDER (only for programming/software topics)')
     : '- Step5 ACCORDION or LEARNING_CARD (concept clarification, no coding game)';
   const domainRule = programmingTrack
-    ? '- Keep coding practice tied to the concepts taught in this module.'
+    ? (lowBandwidth
+      ? '- Keep exercises lightweight and text-first because of low bandwidth constraints.'
+      : '- Keep coding practice tied to the concepts taught in this module.')
     : '- Do NOT include CODE_BUILDER for non-programming topics.';
+  const profileRules = profileRulesText(profileContext);
 
-  return `Return ONLY valid JSON (array).\n\nPlan a 7-step lesson for module: "${moduleTitle}" (${moduleDesc}) in course: "${courseTitle}".\n\nRules:\n- Step1 TEXT (teaching first, not quiz)\n- Step3 FLIP_CARD\n- Step4 VIDEO (exactly 1 video per module)\n${step5Rule}\n- Step6 DRAG_FILL (applied challenge)\n- Step7 QUIZ (exactly 4 questions later when generating content)\n${domainRule}\n- Prefer interactive Cisco/Duolingo style types: ACCORDION, HOTSPOT, CAROUSEL, LEARNING_CARD, DRAG_FILL${programmingTrack ? ', CODE_BUILDER' : ''}\n\nArray item format: {"id": string, "title": string, "type": "TEXT"|"VIDEO"|"FLIP_CARD"|"QUIZ"|"CODE_BUILDER"|"LEARNING_CARD"|"DRAG_FILL"|"ACCORDION"|"HOTSPOT"|"CAROUSEL"}\n\nImportant:\n- Every step title must be specific (avoid generic titles like "Lesson 1" or "Practice").\n- Step titles should clearly describe the exact skill/concept being learned.`;
+  return `Return ONLY valid JSON (array).\n\nPlan a 7-step lesson for module: "${moduleTitle}" (${moduleDesc}) in course: "${courseTitle}".\n\nProfile constraints:\n${profileRules}\n\nRules:\n- Step1 TEXT (teaching first, not quiz)\n- Step3 FLIP_CARD\n- Step4 VIDEO (exactly 1 video per module unless low bandwidth mode suggests text-first alternatives)\n${step5Rule}\n- Step6 DRAG_FILL (applied challenge)\n- Step7 QUIZ (exactly 4 questions later when generating content)\n${domainRule}\n- Prefer interactive Cisco/Duolingo style types: ACCORDION, HOTSPOT, CAROUSEL, LEARNING_CARD, DRAG_FILL${programmingTrack && !lowBandwidth ? ', CODE_BUILDER' : ''}\n\nArray item format: {"id": string, "title": string, "type": "TEXT"|"VIDEO"|"FLIP_CARD"|"QUIZ"|"CODE_BUILDER"|"LEARNING_CARD"|"DRAG_FILL"|"ACCORDION"|"HOTSPOT"|"CAROUSEL"}\n\nImportant:\n- Every step title must be specific (avoid generic titles like "Lesson 1" or "Practice").\n- Step titles should clearly describe the exact skill/concept being learned.`;
 }
 
-function promptStepContent(courseTitle, moduleTitle, stepTitle, type, referenceContext = '') {
+function promptStepContent(courseTitle, moduleTitle, stepTitle, type, referenceContext = '', profileContext = {}) {
+  const normalizedProfile = normalizeProfileContext(profileContext);
   const programmingTrack = isProgrammingTopic(courseTitle, moduleTitle, stepTitle);
+  const lowBandwidth = normalizedProfile.lowBandwidthMode;
+  const flashcardRule = String(type || '').toUpperCase() === 'FLIP_CARD'
+    ? '- For FLIP_CARD: do not repeat fronts/backs from earlier flashcards listed in reference context.\n'
+    : '';
   const referenceBlock = referenceContext
     ? `\nReference context from earlier generated lesson content (must be reused in this step):\n${referenceContext}\n`
     : '\nReference context from earlier generated lesson content:\n- Not available yet. Use module and step titles directly and keep the challenge coherent.\n';
 
-  return `Return ONLY valid JSON (no markdown, no explanations outside JSON).\n\nGenerate lesson content for:\nCourse: ${courseTitle}\nModule: ${moduleTitle}\nStep: ${stepTitle}\nType: ${type}\n${referenceBlock}\nGlobal rules:\n- Include lessonText: 1 concise sentence intro.\n- Keep content scannable: bullets, short sentences.\n- Use specific, meaningful titles and terms from this module.\n- Never generate random or unrelated tasks.\n- Make every quiz/challenge item traceable to concepts already taught in TEXT/VIDEO/learning cards.\n\nType-specific formats:\nTEXT => {type,title,lessonText,data:{content:string (markdown)}}\nACCORDION => data:{items:[{title,content}]} (3 items)\nFLIP_CARD => data:{cards:[{front,back,icon?,imageUrl?}]} (4 cards)\nVIDEO => data:{videoUrl (embed), videoTitle, content (short summary + bullets), videoWebUrl?}\nQUIZ => data:{questions:[{question,options[4],correctAnswer(0-3),explanation}]} (4 questions)\nCODE_BUILDER => data:{codeBuilder:{avatarInstruction,lines:[{content,correctValue}],options:[string]}}\nDRAG_FILL => data:{challenges:[{instruction,codeTemplate,options,correctAnswer,explanation}]}\nHOTSPOT => data:{image,points:[{title,content,icon}]}\nCAROUSEL => data:{slides:[{title,content,imagePrompt,imageUrl}] }\nLEARNING_CARD => data:{learningCards:[{title,content,layout}]}\n\nExtra rules:\n- If VIDEO: use an EMBEDDABLE URL format https://www.youtube-nocookie.com/embed/<real_11_char_video_id>. Never output placeholders like VIDEO_ID.\n- For DRAG_FILL: instruction must clearly state what learner should do, where to get clues, and how to fill blanks in order.\n- For DRAG_FILL: each challenge must use 2-4 blanks maximum.\n- For DRAG_FILL: options must be meaningful domain terms; never output placeholders like answer1, answer2, A, B, C, D.\n- For DRAG_FILL: if codeTemplate has N blanks, correctAnswer must have exactly N comma-separated answers in the same order.\n- For QUIZ/DRAG_FILL: each question/challenge must include terms from the reference context, module title, or video summary.\n${programmingTrack ? '- For CODE_BUILDER: each line.content must contain exactly one ___ and correctValue must match one option exactly.\n- For CODE_BUILDER: correctValue must be a SINGLE value (no commas, no multiple answers).\n- For CODE_BUILDER: options must be short code tokens/expressions only (no full sentences, no questions).' : '- This is not a programming topic. Avoid code syntax and use plain-language, topic-relevant activities.'}`;
+  const profileRules = profileRulesText(profileContext);
+  return `Return ONLY valid JSON (no markdown, no explanations outside JSON).\n\nGenerate lesson content for:\nCourse: ${courseTitle}\nModule: ${moduleTitle}\nStep: ${stepTitle}\nType: ${type}\n${referenceBlock}\nProfile constraints:\n${profileRules}\nGlobal rules:\n- Include lessonText: 1 concise sentence intro.\n- Keep content scannable: bullets, short sentences.\n- Use specific, meaningful titles and terms from this module.\n- Never generate random or unrelated tasks.\n- Make every quiz/challenge item traceable to concepts already taught in TEXT/VIDEO/learning cards.\n- Keep content localized to output language code ${normalizedProfile.preferredLanguage}.\n\nType-specific formats:\nTEXT => {type,title,lessonText,data:{content:string (markdown)}}\nACCORDION => data:{items:[{title,content}]} (3 items)\nFLIP_CARD => data:{cards:[{front,back,icon?,imageUrl?}]} (4 cards)\nVIDEO => data:{videoUrl (embed), videoTitle, content (short summary + bullets), videoWebUrl?}\nQUIZ => data:{questions:[{question,options[4],correctAnswer(0-3),explanation}]} (4 questions)\nCODE_BUILDER => data:{codeBuilder:{avatarInstruction,lines:[{content,correctValue}],options:[string]}}\nDRAG_FILL => data:{challenges:[{instruction,codeTemplate,options,correctAnswer,explanation}]}\nHOTSPOT => data:{image,points:[{title,content,icon}]}\nCAROUSEL => data:{slides:[{title,content,imagePrompt,imageUrl}] }\nLEARNING_CARD => data:{learningCards:[{title,content,layout}]}\n\nExtra rules:\n- Use exact topic terms from module and step titles in all generated items.\n- If VIDEO: use an EMBEDDABLE URL format https://www.youtube-nocookie.com/embed/<real_11_char_video_id>. Never output placeholders like VIDEO_ID.\n- For VIDEO: pick a topic-related YouTube result, and prefer regular videos over Shorts when both are relevant.\n- For FLIP_CARD: each card front must be unique and clearly tied to this step title.\n- For DRAG_FILL: instruction must clearly state what learner should do, where to get clues, and how to fill blanks in order.\n- For DRAG_FILL: each challenge must use 2-4 blanks maximum.\n- For DRAG_FILL: options must be meaningful domain terms; never output placeholders like answer1, answer2, A, B, C, D.\n- For DRAG_FILL: if codeTemplate has N blanks, correctAnswer must have exactly N comma-separated answers in the same order.\n- For QUIZ/DRAG_FILL: each question/challenge must include terms from the reference context, module title, or video summary.\n${lowBandwidth ? '- Low bandwidth mode is active: minimize media-heavy dependencies and provide text-first alternatives.\n' : ''}${flashcardRule}${programmingTrack ? '- For CODE_BUILDER: each line.content must contain exactly one ___ and correctValue must match one option exactly.\n- For CODE_BUILDER: correctValue must be a SINGLE value (no commas, no multiple answers).\n- For CODE_BUILDER: options must be short code tokens/expressions only (no full sentences, no questions).' : '- This is not a programming topic. Avoid code syntax and use plain-language, topic-relevant activities.'}`;
 }
 
 function promptTutorAsk(contentJson, question) {
@@ -1175,6 +1454,10 @@ function fallbackStepContent(type, stepTitle, moduleTitle, yt) {
 // ------------------------ API handlers ------------------------
 
 async function handleApi(req, res, pathname) {
+  const requestUrl = new URL(req.url || pathname || '/api/config', 'http://localhost');
+  const query = requestUrl.searchParams;
+  const db = loadAppDb();
+
   if (req.method === 'GET' && pathname === '/api/config') {
     const providers = ['gemini','openai','anthropic','openrouter'].map(p => ({
       id: p,
@@ -1184,6 +1467,106 @@ async function handleApi(req, res, pathname) {
     return sendJson(res, 200, {
       providers,
       providerCandidates: providerCandidates().filter(providerAvailable),
+    });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/profile/me') {
+    const accountId = String(query.get('accountId') || '').trim();
+    const profile = db.profiles.find((p) => p.id === accountId) || null;
+    return sendJson(res, 200, { ok: true, data: profile });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/impact/summary') {
+    const accountId = String(query.get('accountId') || '').trim();
+    const courseId = String(query.get('courseId') || '').trim();
+    const pretests = db.pretests.filter((x) => x.accountId === accountId && (!courseId || x.courseId === courseId));
+    const posttests = db.posttests.filter((x) => x.accountId === accountId && (!courseId || x.courseId === courseId));
+    const conf = db.confidence.filter((x) => x.accountId === accountId && (!courseId || x.courseId === courseId));
+    const events = db.events.filter((x) => x.accountId === accountId && (!courseId || x.courseId === courseId));
+
+    const avg = (arr) => arr.length ? (arr.reduce((acc, n) => acc + Number(n || 0), 0) / arr.length) : 0;
+    const preAvg = avg(pretests.map((x) => safePercent(x.scorePct)));
+    const postAvg = avg(posttests.map((x) => safePercent(x.scorePct)));
+
+    const preConf = avg(conf.filter((x) => x.phase === 'pre').map((x) => Number(x.score || 0)));
+    const postConf = avg(conf.filter((x) => x.phase === 'post').map((x) => Number(x.score || 0)));
+
+    const started = events.filter((e) => e.type === 'course_started').length;
+    const completed = events.filter((e) => e.type === 'course_completed').length;
+    const completionRate = started ? Math.round((completed / started) * 100) : 0;
+
+    const activeDays = new Set(events.filter((e) => e.type === 'daily_active').map((e) => String(e.date || '').slice(0, 10))).size;
+    const usersReached = new Set(events.map((e) => e.accountId)).size;
+
+    const startsByCourse = new Map();
+    for (const e of events) {
+      if (e.type !== 'course_started') continue;
+      const courseKey = String(e.courseId || '');
+      const at = Date.parse(String(e.date || ''));
+      if (!Number.isFinite(at)) continue;
+      const prev = startsByCourse.get(courseKey);
+      if (prev === undefined || at < prev) startsByCourse.set(courseKey, at);
+    }
+    let completionSamples = 0;
+    let completionMinutesTotal = 0;
+    for (const e of events) {
+      if (e.type !== 'course_completed') continue;
+      const courseKey = String(e.courseId || '');
+      const startAt = startsByCourse.get(courseKey);
+      const doneAt = Date.parse(String(e.date || ''));
+      if (!Number.isFinite(startAt) || !Number.isFinite(doneAt) || doneAt < startAt) continue;
+      completionSamples += 1;
+      completionMinutesTotal += Math.round((doneAt - startAt) / 60000);
+    }
+    const avgTimeToCompletionMins = completionSamples ? Math.round(completionMinutesTotal / completionSamples) : 0;
+
+    const dashboard = {
+      usersReached,
+      skillGainPp: Math.round((postAvg - preAvg) * 10) / 10,
+      confidenceGain: Math.round((postConf - preConf) * 10) / 10,
+      completionRate,
+      avgTimeToCompletionMins,
+      d7Retention: activeDays >= 7 ? 1 : (activeDays > 0 ? Math.round((activeDays / 7) * 100) / 100 : 0),
+    };
+    return sendJson(res, 200, { ok: true, data: dashboard });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/public/feed') {
+    const feed = db.publicPosts.filter((p) => p.visibility === 'public').sort((a, b) => {
+      return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+    });
+    return sendJson(res, 200, { ok: true, data: feed });
+  }
+
+  const publicCommentsMatch = pathname.match(/^\/api\/public\/([^/]+)\/comments$/);
+  if (req.method === 'GET' && publicCommentsMatch) {
+    const postId = decodeURIComponent(publicCommentsMatch[1]);
+    const comments = db.comments
+      .filter((c) => c.postId === postId)
+      .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+      .slice(0, 20);
+    return sendJson(res, 200, { ok: true, data: comments });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/courses/my') {
+    const ownedPosts = db.publicPosts.filter((p) => p.ownerId === String(query.get('accountId') || '').trim());
+    return sendJson(res, 200, { ok: true, data: ownedPosts });
+  }
+
+  const cohortDashboardMatch = pathname.match(/^\/api\/cohorts\/([^/]+)\/dashboard$/);
+  if (req.method === 'GET' && cohortDashboardMatch) {
+    const cohortId = decodeURIComponent(cohortDashboardMatch[1]);
+    const cohort = db.cohorts.find((c) => c.id === cohortId) || null;
+    const members = db.cohortMembers.filter((m) => m.cohortId === cohortId);
+    const courseEvents = db.events.filter((e) => e.courseId === cohort?.courseId);
+    return sendJson(res, 200, {
+      ok: true,
+      data: {
+        cohort,
+        memberCount: members.length,
+        completionCount: courseEvents.filter((e) => e.type === 'course_completed').length,
+        lessonCompletions: courseEvents.filter((e) => e.type === 'lesson_completed').length,
+      }
     });
   }
 
@@ -1199,12 +1582,242 @@ async function handleApi(req, res, pathname) {
   }
 
   const router = body?.router || {};
+  const accountId = String(body?.accountId || '').trim() || `local-${sha256(String(req.headers['user-agent'] || 'ua')).slice(0, 12)}`;
+  const profileContext = normalizeProfileContext(body?.profileContext || {});
 
   try {
+    if (pathname === '/api/profile/upsert') {
+      const incoming = normalizeProfileContext(body?.profile || {});
+      const existing = db.profiles.find((p) => p.id === accountId);
+      const next = {
+        id: accountId,
+        email: String(body?.profile?.email || existing?.email || ''),
+        userSegment: incoming.userSegment,
+        connectivityLevel: incoming.connectivityLevel,
+        learningGoal: incoming.learningGoal || '',
+        preferredLanguage: incoming.preferredLanguage || 'en',
+        region: incoming.region || 'ASEAN',
+        discoverySource: String(body?.profile?.discoverySource || existing?.discoverySource || 'social_media'),
+        deviceClass: String(body?.profile?.deviceClass || existing?.deviceClass || 'unknown'),
+        lowBandwidthMode: !!incoming.lowBandwidthMode,
+        updatedAt: nowIso(),
+        createdAt: existing?.createdAt || nowIso(),
+      };
+      const idx = db.profiles.findIndex((p) => p.id === accountId);
+      if (idx === -1) db.profiles.push(next);
+      else db.profiles[idx] = next;
+      saveAppDb(db);
+      return sendJson(res, 200, { ok: true, data: next });
+    }
+
+    if (pathname === '/api/impact/pretest') {
+      db.pretests.push({
+        id: `pre-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        accountId,
+        courseId: String(body?.courseId || '').trim(),
+        scorePct: safePercent(body?.scorePct),
+        createdAt: nowIso(),
+      });
+      saveAppDb(db);
+      return sendJson(res, 200, { ok: true, data: true });
+    }
+
+    if (pathname === '/api/impact/posttest') {
+      db.posttests.push({
+        id: `post-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        accountId,
+        courseId: String(body?.courseId || '').trim(),
+        scorePct: safePercent(body?.scorePct),
+        createdAt: nowIso(),
+      });
+      saveAppDb(db);
+      return sendJson(res, 200, { ok: true, data: true });
+    }
+
+    if (pathname === '/api/impact/confidence') {
+      const phase = String(body?.phase || 'pre').toLowerCase() === 'post' ? 'post' : 'pre';
+      const score = Math.max(1, Math.min(5, Number(body?.score || 1)));
+      db.confidence.push({
+        id: `conf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        accountId,
+        courseId: String(body?.courseId || '').trim(),
+        phase,
+        score,
+        createdAt: nowIso(),
+      });
+      saveAppDb(db);
+      return sendJson(res, 200, { ok: true, data: true });
+    }
+
+    if (pathname === '/api/impact/event') {
+      const type = String(body?.type || '').trim();
+      const allowed = new Set(['course_started', 'lesson_started', 'lesson_completed', 'quiz_submitted', 'course_completed', 'daily_active']);
+      if (!allowed.has(type)) return sendJson(res, 400, { error: 'invalid event type' });
+      db.events.push({
+        id: `ev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        accountId,
+        courseId: String(body?.courseId || '').trim(),
+        type,
+        payload: body?.payload && typeof body.payload === 'object' ? body.payload : {},
+        date: nowIso(),
+      });
+      saveAppDb(db);
+      return sendJson(res, 200, { ok: true, data: true });
+    }
+
+    const publishMatch = pathname.match(/^\/api\/courses\/([^/]+)\/publish$/);
+    if (publishMatch) {
+      const courseId = decodeURIComponent(publishMatch[1]);
+      const visibility = String(body?.visibility || 'private') === 'public' ? 'public' : 'private';
+      const course = body?.course && typeof body.course === 'object' ? body.course : {};
+      const existingIdx = db.publicPosts.findIndex((p) => p.ownerId === accountId && p.courseId === courseId);
+      const existingPost = existingIdx === -1 ? null : db.publicPosts[existingIdx];
+      const next = {
+        id: existingPost?.id || `pub-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        courseId,
+        ownerId: accountId,
+        title: String(course?.title || existingPost?.title || courseId),
+        description: String(course?.description || existingPost?.description || ''),
+        snapshot: course && typeof course === 'object' ? course : (existingPost?.snapshot || null),
+        language: String(profileContext.preferredLanguage || existingPost?.language || 'en'),
+        segment: String(profileContext.userSegment || existingPost?.segment || 'youth'),
+        visibility,
+        moderationStatus: visibility === 'public'
+          ? (existingPost?.moderationStatus === 'hidden' ? 'hidden' : 'under_review')
+          : 'clean',
+        reactions: Number(existingPost?.reactions || 0),
+        comments: Number(existingPost?.comments || 0),
+        saves: Number(existingPost?.saves || 0),
+        createdAt: existingPost?.createdAt || nowIso(),
+      };
+      if (existingIdx === -1) db.publicPosts.push(next);
+      else db.publicPosts[existingIdx] = next;
+      saveAppDb(db);
+      return sendJson(res, 200, { ok: true, data: { id: next.id, visibility: next.visibility, moderationStatus: next.moderationStatus } });
+    }
+
+    const reactMatch = pathname.match(/^\/api\/public\/([^/]+)\/react$/);
+    if (reactMatch) {
+      const postId = decodeURIComponent(reactMatch[1]);
+      const post = db.publicPosts.find((p) => p.id === postId);
+      if (!post) return sendJson(res, 404, { error: 'post not found' });
+      db.reactions.push({
+        id: `rea-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        postId,
+        accountId,
+        reaction: String(body?.reaction || 'like'),
+        createdAt: nowIso(),
+      });
+      post.reactions = Math.max(0, Number(post.reactions || 0) + 1);
+      saveAppDb(db);
+      return sendJson(res, 200, { ok: true, data: true });
+    }
+
+    const commentMatch = pathname.match(/^\/api\/public\/([^/]+)\/comment$/);
+    if (commentMatch) {
+      const postId = decodeURIComponent(commentMatch[1]);
+      const post = db.publicPosts.find((p) => p.id === postId);
+      if (!post) return sendJson(res, 404, { error: 'post not found' });
+      const text = String(body?.comment || '').trim();
+      if (!text) return sendJson(res, 400, { error: 'comment required' });
+      db.comments.push({
+        id: `com-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        postId,
+        accountId,
+        text: text.slice(0, 500),
+        createdAt: nowIso(),
+      });
+      post.comments = Math.max(0, Number(post.comments || 0) + 1);
+      saveAppDb(db);
+      return sendJson(res, 200, { ok: true, data: true });
+    }
+
+    const reportMatch = pathname.match(/^\/api\/courses\/([^/]+)\/report$/);
+    if (reportMatch) {
+      const courseId = decodeURIComponent(reportMatch[1]);
+      const reason = String(body?.reason || '').trim() || 'Not specified';
+      db.reports.push({
+        id: `rep-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        courseId,
+        accountId,
+        reason: reason.slice(0, 500),
+        createdAt: nowIso(),
+      });
+      const related = db.publicPosts.filter((p) => p.courseId === courseId);
+      if (related.length >= 1) {
+        for (const p of related) {
+          const totalReports = db.reports.filter((r) => r.courseId === p.courseId).length;
+          if (totalReports >= 3) p.moderationStatus = 'flagged';
+          if (totalReports >= 5) p.moderationStatus = 'hidden';
+        }
+      }
+      saveAppDb(db);
+      return sendJson(res, 200, { ok: true, data: true });
+    }
+
+    if (pathname === '/api/cohorts') {
+      const name = String(body?.name || '').trim();
+      const courseId = String(body?.courseId || '').trim();
+      if (!name || !courseId) return sendJson(res, 400, { error: 'name and courseId required' });
+      const cohort = {
+        id: `coh-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name: name.slice(0, 120),
+        ownerId: accountId,
+        courseId,
+        createdAt: nowIso(),
+      };
+      db.cohorts.push(cohort);
+      db.cohortMembers.push({
+        id: `cohmem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        cohortId: cohort.id,
+        accountId,
+        role: 'owner',
+        createdAt: nowIso(),
+      });
+      saveAppDb(db);
+      return sendJson(res, 200, { ok: true, data: cohort });
+    }
+
+    const joinMatch = pathname.match(/^\/api\/cohorts\/([^/]+)\/join$/);
+    if (joinMatch) {
+      const cohortId = decodeURIComponent(joinMatch[1]);
+      const exists = db.cohortMembers.find((m) => m.cohortId === cohortId && m.accountId === accountId);
+      if (!exists) {
+        db.cohortMembers.push({
+          id: `cohmem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          cohortId,
+          accountId,
+          role: 'member',
+          createdAt: nowIso(),
+        });
+        saveAppDb(db);
+      }
+      return sendJson(res, 200, { ok: true, data: true });
+    }
+
+    if (pathname === '/api/progress/sync') {
+      const items = Array.isArray(body?.items) ? body.items : [];
+      for (const item of items) {
+        if (!item || typeof item !== 'object') continue;
+        const type = String(item.type || '').trim();
+        if (!type) continue;
+        db.events.push({
+          id: `ev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          accountId,
+          courseId: String(item.courseId || ''),
+          type,
+          payload: item.payload && typeof item.payload === 'object' ? item.payload : {},
+          date: item.createdAt || nowIso(),
+        });
+      }
+      saveAppDb(db);
+      return sendJson(res, 200, { ok: true, data: { merged: items.length } });
+    }
+
     if (pathname === '/api/generate/assessment') {
       const topic = String(body?.topic || '').trim();
       if (!topic) return sendJson(res, 400, { error: 'topic required' });
-      const prompt = promptAssessment(topic);
+      const prompt = promptAssessment(topic, profileContext);
       const key = sha256(`assessment|${topic}|${JSON.stringify(router)}`);
       const text = await routeText(router, prompt, key);
       const json = extractJson(text);
@@ -1215,7 +1828,7 @@ async function handleApi(req, res, pathname) {
       const topic = String(body?.topic || '').trim();
       const answers = body?.answers || {};
       if (!topic) return sendJson(res, 400, { error: 'topic required' });
-      const prompt = promptCourseOutline(topic, answers);
+      const prompt = promptCourseOutline(topic, answers, profileContext);
       const key = sha256(`outline|${topic}|${JSON.stringify(answers)}|${JSON.stringify(router)}`);
       const text = await routeText(router, prompt, key);
       const json = extractJson(text);
@@ -1228,7 +1841,7 @@ async function handleApi(req, res, pathname) {
       const moduleDesc = String(body?.moduleDesc || '').trim();
       if (!courseTitle || !moduleTitle) return sendJson(res, 400, { error: 'courseTitle and moduleTitle required' });
 
-      const prompt = promptLessonPlan(courseTitle, moduleTitle, moduleDesc);
+      const prompt = promptLessonPlan(courseTitle, moduleTitle, moduleDesc, profileContext);
       const key = sha256(`lessonplan|${courseTitle}|${moduleTitle}|${moduleDesc}|${JSON.stringify(router)}`);
       const text = await routeText(router, prompt, key);
       const json = normalizeLessonPlan(extractJson(text), `${courseTitle} ${moduleTitle} ${moduleDesc}`);
@@ -1247,10 +1860,12 @@ async function handleApi(req, res, pathname) {
       const effectiveType = (!isProgrammingTopic(courseTitle, moduleTitle, stepTitle) && type === 'CODE_BUILDER')
         ? 'DRAG_FILL'
         : type;
+      const profileLowBandwidth = !!profileContext.lowBandwidthMode || profileContext.connectivityLevel !== 'normal';
+      const finalType = profileLowBandwidth && effectiveType === 'VIDEO' ? 'TEXT' : effectiveType;
 
       let yt = null;
       let videoRegistryKey = '';
-      if (effectiveType === 'VIDEO') {
+      if (finalType === 'VIDEO') {
         videoRegistryKey = moduleVideoKey(courseTitle, moduleTitle);
         const usedIds = getUsedVideoIds(videoRegistryKey);
         const ytSearch = await youtubeSearchEmbed(`${courseTitle} ${moduleTitle} ${stepTitle} tutorial`, usedIds);
@@ -1259,18 +1874,18 @@ async function handleApi(req, res, pathname) {
         yt = ytSearch || ytNoKey || ytCurated || null;
       }
 
-      const prompt = promptStepContent(courseTitle, moduleTitle, stepTitle, effectiveType, referenceContext);
-      const key = sha256(`step|${courseTitle}|${moduleTitle}|${stepTitle}|${effectiveType}|${referenceContext}|${JSON.stringify(router)}`);
+      const prompt = promptStepContent(courseTitle, moduleTitle, stepTitle, finalType, referenceContext, profileContext);
+      const key = sha256(`step|${courseTitle}|${moduleTitle}|${stepTitle}|${finalType}|${referenceContext}|${JSON.stringify(router)}`);
       let json = null;
       try {
         const text = await routeText(router, prompt, key);
         json = extractJson(text);
       } catch (err) {
-        const fallback = fallbackStepContent(effectiveType, stepTitle, moduleTitle, yt);
+        const fallback = fallbackStepContent(finalType, stepTitle, moduleTitle, yt);
         return sendJson(res, 200, { ok: true, data: fallback, warning: 'Using fallback content because generation failed.' });
       }
 
-      if (effectiveType === 'VIDEO' && yt) {
+      if (finalType === 'VIDEO' && yt) {
         json = json || {};
         json.data = json.data || {};
         // Prefer trusted search/curated video to avoid topic mismatches and embed failures.
@@ -1281,8 +1896,19 @@ async function handleApi(req, res, pathname) {
         }
       }
 
-      let validated = validateStepContent(effectiveType, json);
-      if (effectiveType === 'VIDEO') {
+      let validated = validateStepContent(finalType, json);
+      if (finalType === 'FLIP_CARD') {
+        const blockedKeys = extractFlashcardKeysFromReference(referenceContext);
+        validated = validateStepContent(finalType, {
+          ...validated,
+          data: {
+            ...(validated?.data || {}),
+            cards: sanitizeFlashcards(validated?.data?.cards, `${moduleTitle} ${stepTitle}`, blockedKeys),
+          },
+        });
+      }
+
+      if (finalType === 'VIDEO') {
         const validId = extractYoutubeVideoId(validated?.data?.videoUrl) || extractYoutubeVideoId(validated?.data?.videoWebUrl);
         if (!validId) {
           const rescue = yt || await youtubeSearchEmbedNoKey(`${courseTitle} ${moduleTitle} ${stepTitle} tutorial`, getUsedVideoIds(videoRegistryKey)) || curatedVideo(`${courseTitle} ${moduleTitle} ${stepTitle}`);

@@ -1,0 +1,1 @@
+{"text":"{\n  \"data\": {\n    \"learningCards\": [\n      {\n        \"title\": \"Uji Pemahaman Essentials\",\n        \"content\": \"Uji pemahaman Anda tentang konsep dasar Python yang telah dipelajari.\",\n        \"layout\": \"vertical\"\n      }\n    ]\n  }\n}","provider":"openrouter","model":"openai/gpt-4o-mini","at":1772575494880}

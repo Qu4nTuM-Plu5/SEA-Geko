@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Check, X, Trophy, ArrowRight, RotateCcw } from 'lucide-react';
+import { Check, X, Trophy, ChevronDown, SlidersHorizontal, Lightbulb, ArrowLeft, ArrowRight, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 
@@ -10,6 +10,7 @@ interface QuizProps {
     correctAnswer: number;
     explanation: string;
   }[];
+  topicLabel?: string;
   onComplete?: (result: { passed: boolean; score: number; percentage: number }) => void;
 }
 
@@ -23,7 +24,7 @@ const isPlaceholderOption = (option: string): boolean => {
   return !o || /^[a-d]$/.test(o) || /^option\s*[a-d0-9]+$/.test(o);
 };
 
-export const Quiz: React.FC<QuizProps> = ({ questions, onComplete }) => {
+export const Quiz: React.FC<QuizProps> = ({ questions, topicLabel, onComplete }) => {
   const normalizedQuestions = useMemo(() => {
     const cleaned = (Array.isArray(questions) ? questions : [])
       .map((q) => {
@@ -70,41 +71,68 @@ export const Quiz: React.FC<QuizProps> = ({ questions, onComplete }) => {
   }, [questions]);
 
   const [currentIdx, setCurrentIdx] = useState(0);
-  const [selected, setSelected] = useState<number | null>(null);
-  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [selectedByQuestion, setSelectedByQuestion] = useState<Array<number | null>>([]);
+  const [submittedByQuestion, setSubmittedByQuestion] = useState<boolean[]>([]);
+  const [showInfoByQuestion, setShowInfoByQuestion] = useState<boolean[]>([]);
   const [isFinished, setIsFinished] = useState(false);
   const [score, setScore] = useState(0);
 
   useEffect(() => {
     setCurrentIdx(0);
-    setSelected(null);
-    setIsSubmitted(false);
+    setSelectedByQuestion(Array(normalizedQuestions.length).fill(null));
+    setSubmittedByQuestion(Array(normalizedQuestions.length).fill(false));
+    setShowInfoByQuestion(Array(normalizedQuestions.length).fill(false));
     setIsFinished(false);
     setScore(0);
   }, [normalizedQuestions]);
 
   const current = normalizedQuestions[currentIdx];
+  const selected = selectedByQuestion[currentIdx] ?? null;
+  const isSubmitted = submittedByQuestion[currentIdx] ?? false;
 
-  const handleSubmit = () => {
-    if (selected === current.correctAnswer) {
-      setScore(prev => prev + 1);
+  const handleSelectOption = (idx: number) => {
+    if (isSubmitted) return;
+
+    setSelectedByQuestion((prev) => {
+      const next = [...prev];
+      next[currentIdx] = idx;
+      return next;
+    });
+
+    setSubmittedByQuestion((prev) => {
+      const next = [...prev];
+      next[currentIdx] = true;
+      return next;
+    });
+
+    if (idx === current.correctAnswer) {
+      setScore((prev) => prev + 1);
     }
-    setIsSubmitted(true);
+  };
+
+  const handlePrevious = () => {
+    if (currentIdx <= 0) return;
+    setCurrentIdx((prev) => prev - 1);
   };
 
   const handleNext = () => {
+    if (!isSubmitted) return;
     if (currentIdx < normalizedQuestions.length - 1) {
-      setCurrentIdx(currentIdx + 1);
-      setSelected(null);
-      setIsSubmitted(false);
+      setCurrentIdx((prev) => prev + 1);
+      return;
     }
-  };
-
-  const handleFinish = () => {
     const percentage = Math.round((score / normalizedQuestions.length) * 100);
     const passed = percentage >= 70;
     setIsFinished(true);
     onComplete?.({ passed, score, percentage });
+  };
+
+  const toggleInfo = () => {
+    setShowInfoByQuestion((prev) => {
+      const next = [...prev];
+      next[currentIdx] = !next[currentIdx];
+      return next;
+    });
   };
 
   if (isFinished) {
@@ -158,8 +186,9 @@ export const Quiz: React.FC<QuizProps> = ({ questions, onComplete }) => {
           <button 
             onClick={() => {
               setCurrentIdx(0);
-              setSelected(null);
-              setIsSubmitted(false);
+              setSelectedByQuestion(Array(normalizedQuestions.length).fill(null));
+              setSubmittedByQuestion(Array(normalizedQuestions.length).fill(false));
+              setShowInfoByQuestion(Array(normalizedQuestions.length).fill(false));
               setIsFinished(false);
               setScore(0);
             }}
@@ -174,119 +203,158 @@ export const Quiz: React.FC<QuizProps> = ({ questions, onComplete }) => {
   }
 
   return (
-    <div className="space-y-10">
-      <div className="space-y-4">
-        <div className="flex justify-between items-center text-[10px] font-mono font-bold uppercase tracking-widest text-slate-400">
-          <span>Question {currentIdx + 1} of {normalizedQuestions.length}</span>
-          <span className="text-emerald-600">{score} Correct</span>
-        </div>
-        <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-          <motion.div 
-            className="h-full bg-emerald-500 shadow-sm" 
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <Trophy className="w-5 h-5 text-emerald-600" />
+        <div className="flex-1 h-5 rounded-full border border-slate-300 bg-slate-100 overflow-hidden">
+          <motion.div
+            className="h-full bg-emerald-500"
             initial={{ width: 0 }}
-            animate={{ width: `${((currentIdx + 1) / normalizedQuestions.length) * 100}%` }}
+            animate={{ width: `${(score / normalizedQuestions.length) * 100}%` }}
+            transition={{ duration: 0.25 }}
           />
         </div>
+        <div className="px-4 py-1 rounded-full border border-emerald-500 bg-emerald-50 text-emerald-600 font-semibold">
+          {score} / {normalizedQuestions.length}
+        </div>
       </div>
 
-      <h3 className="text-2xl md:text-3xl font-bold text-slate-900 leading-tight">{current.question}</h3>
+      <div className="rounded-[24px] border border-slate-200 bg-white p-6 md:p-8 space-y-6 shadow-sm">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="h-12 w-2 rounded-full bg-violet-600" />
+            <div className="flex items-center gap-2 min-w-0">
+              <h3 className="text-2xl font-bold text-slate-900 whitespace-nowrap">Question {currentIdx + 1}</h3>
+              <ChevronDown className="w-4 h-4 text-slate-400" />
+              {topicLabel ? (
+                <span className="hidden md:inline-flex items-center px-3 py-1 rounded-lg border border-orange-200 text-orange-500 bg-orange-50 text-sm truncate max-w-[360px]">
+                  {topicLabel}
+                </span>
+              ) : null}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 transition-colors"
+          >
+            <SlidersHorizontal className="w-4 h-4" />
+            Quiz Settings
+          </button>
+        </div>
 
-      <div className="space-y-4">
-        <AnimatePresence mode="popLayout">
-          {current.options.map((option, idx) => {
-            const isCorrect = idx === current.correctAnswer;
-            const isSelected = selected === idx;
-            
-            return (
-              <motion.button
-                key={idx}
-                layout
-                disabled={isSubmitted}
-                onClick={() => setSelected(idx)}
-                className={cn(
-                  "w-full p-6 rounded-2xl text-left transition-all border-2 flex items-center justify-between group shadow-sm",
-                  !isSubmitted && isSelected && "bg-emerald-50 border-emerald-500 text-emerald-700 ring-4 ring-emerald-500/10",
-                  !isSubmitted && !isSelected && "bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300",
-                  isSubmitted && isCorrect && "bg-emerald-50 border-emerald-500 text-emerald-700",
-                  isSubmitted && isSelected && !isCorrect && "bg-red-50 border-red-500 text-red-700",
-                  isSubmitted && !isSelected && !isCorrect && "opacity-40 border-slate-100 bg-slate-50"
-                )}
-              >
-                <div className="flex items-center gap-5">
-                  <div className={cn(
-                    "w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold border-2 transition-all",
-                    isSelected ? "bg-emerald-500 text-white border-emerald-500" : "bg-slate-50 border-slate-100 text-slate-400"
-                  )}>
-                    {String.fromCharCode(65 + idx)}
+        <h4 className="text-2xl md:text-[2rem] font-medium text-slate-900 leading-relaxed">
+          {current.question}
+        </h4>
+
+        <div className="space-y-4">
+          <AnimatePresence mode="popLayout">
+            {current.options.map((option, idx) => {
+              const isCorrect = idx === current.correctAnswer;
+              const isSelected = selected === idx;
+
+              return (
+                <motion.button
+                  key={idx}
+                  layout
+                  onClick={() => handleSelectOption(idx)}
+                  className={cn(
+                    "w-full rounded-2xl p-5 border text-left transition-colors flex items-center justify-between",
+                    !isSubmitted && "bg-slate-100 border-slate-200 hover:bg-slate-50",
+                    isSubmitted && isCorrect && "bg-emerald-100 border-emerald-400 text-emerald-900",
+                    isSubmitted && isSelected && !isCorrect && "bg-red-50 border-red-300 text-red-900",
+                    isSubmitted && !isCorrect && !isSelected && "bg-slate-100 border-slate-200 text-slate-500"
+                  )}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-full bg-slate-200 text-slate-800 flex items-center justify-center text-2xl font-normal">
+                      {String.fromCharCode(65 + idx)}
+                    </div>
+                    <span className="text-base md:text-lg text-current">{option}</span>
                   </div>
-                  <span className="text-lg font-medium">{option}</span>
-                </div>
-                {isSubmitted && isCorrect && <Check className="w-6 h-6 text-emerald-600" />}
-                {isSubmitted && isSelected && !isCorrect && <X className="w-6 h-6 text-red-600" />}
-              </motion.button>
-            );
-          })}
-        </AnimatePresence>
-      </div>
+                  {isSubmitted && isCorrect ? <Check className="w-6 h-6 text-emerald-600" /> : null}
+                  {isSubmitted && isSelected && !isCorrect ? <X className="w-6 h-6 text-red-500" /> : null}
+                </motion.button>
+              );
+            })}
+          </AnimatePresence>
+        </div>
 
-      <AnimatePresence>
-        {isSubmitted && (
-          <motion.div 
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={toggleInfo}
             className={cn(
-              "p-8 rounded-3xl border-2 shadow-sm",
-              selected === current.correctAnswer 
-                ? "bg-emerald-50 border-emerald-100 text-emerald-900" 
-                : "bg-red-50 border-red-100 text-red-900"
+              "w-full rounded-xl border px-5 py-3 text-lg flex items-center justify-center gap-2 transition-colors",
+              isSubmitted
+                ? "border-amber-300 text-amber-600 hover:bg-amber-50"
+                : "border-blue-300 text-blue-600 hover:bg-blue-50"
             )}
           >
-            <div className="flex items-start gap-4">
-              <div className={cn(
-                "p-1.5 rounded-full mt-0.5 shadow-sm",
-                selected === current.correctAnswer ? "bg-emerald-500 text-white" : "bg-red-500 text-white"
-              )}>
-                {selected === current.correctAnswer ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
-              </div>
-              <div className="space-y-2">
-                <div className="font-bold text-xs uppercase tracking-widest">
-                  {selected === current.correctAnswer ? "Correct!" : "Not quite"}
-                </div>
-                <p className="text-base opacity-90 leading-relaxed font-medium">{current.explanation}</p>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <div className="pt-6">
-        {!isSubmitted ? (
-          <button
-            onClick={handleSubmit}
-            disabled={selected === null}
-            className="w-full py-5 bg-emerald-500 text-white font-bold rounded-2xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-400 transition-all shadow-xl shadow-emerald-500/20 text-lg"
-          >
-            Check Answer
+            <Lightbulb className="w-5 h-5" />
+            {isSubmitted ? "Show Explanation" : "Show Hint"}
           </button>
-        ) : (
-          currentIdx < normalizedQuestions.length - 1 ? (
-            <button
-              onClick={handleNext}
-              className="w-full py-5 bg-slate-900 text-white font-bold rounded-2xl hover:bg-slate-800 transition-all flex items-center justify-center gap-3 text-lg shadow-xl"
-            >
-              Continue
-              <ArrowRight className="w-6 h-6" />
-            </button>
-          ) : (
-            <button
-              onClick={handleFinish}
-              className="w-full py-5 bg-emerald-500 text-white font-bold rounded-2xl hover:bg-emerald-400 transition-all flex items-center justify-center gap-3 shadow-xl shadow-emerald-500/20 text-lg"
-            >
-              Finish Module
-              <Trophy className="w-6 h-6" />
-            </button>
-          )
-        )}
+
+          <AnimatePresence>
+            {showInfoByQuestion[currentIdx] ? (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 8 }}
+                className={cn(
+                  "rounded-2xl p-6 border",
+                  isSubmitted ? "bg-amber-50 border-amber-200 text-amber-900" : "bg-blue-50 border-blue-200 text-slate-800"
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  <div className={cn(
+                    "w-10 h-10 rounded-full flex items-center justify-center",
+                    isSubmitted ? "bg-amber-100 text-amber-600" : "bg-blue-100 text-blue-600"
+                  )}>
+                    <Lightbulb className="w-5 h-5" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xl font-semibold">{isSubmitted ? "Explanation" : "Hint"}</p>
+                    <p className="text-lg leading-relaxed">{current.explanation}</p>
+                  </div>
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-[auto_1fr_auto] gap-3 items-center pt-1">
+          <button
+            type="button"
+            onClick={handlePrevious}
+            disabled={currentIdx === 0}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-5 py-3 text-sm text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Previous
+          </button>
+
+          <button
+            type="button"
+            className="h-full rounded-xl border border-slate-200 bg-slate-100 text-slate-400 px-4 py-3 text-left"
+          >
+            Ask AI for help...
+          </button>
+
+          <button
+            type="button"
+            onClick={handleNext}
+            disabled={!isSubmitted}
+            className={cn(
+              "inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition-colors border",
+              isSubmitted
+                ? "bg-violet-500 border-violet-500 text-white hover:bg-violet-600"
+                : "bg-white border-slate-300 text-slate-400 cursor-not-allowed"
+            )}
+          >
+            {currentIdx < normalizedQuestions.length - 1 ? 'Next' : 'Finish'}
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
       </div>
     </div>
   );
