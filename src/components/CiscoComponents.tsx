@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronDown, ChevronRight, Plus, Check, LucideIcon, ChevronLeft, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Check, ChevronLeft, X } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import Markdown from 'react-markdown';
 import { cn } from '../lib/utils';
@@ -317,6 +317,187 @@ export const CiscoCarousel: React.FC<{ slides: CarouselSlide[] }> = ({ slides })
           </div>
         </div>
       </div>
+    </div>
+  );
+};
+
+interface PopCardItem {
+  title: string;
+  content: string;
+  icon?: string;
+  imageUrl?: string;
+}
+
+export const CiscoPopCards: React.FC<{ cards: PopCardItem[] }> = ({ cards }) => {
+  const normalizedCards = useMemo(
+    () => (Array.isArray(cards) ? cards.filter((card) => String(card?.title || '').trim() || String(card?.content || '').trim()).slice(0, 8) : []),
+    [cards]
+  );
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  useEffect(() => {
+    setActiveIdx(0);
+    setModalOpen(false);
+  }, [normalizedCards.length]);
+
+  if (!normalizedCards.length) return null;
+  const active = normalizedCards[Math.max(0, Math.min(activeIdx, normalizedCards.length - 1))];
+  const ActiveIcon = (active.icon && (LucideIcons as any)[active.icon]) || LucideIcons.Info;
+
+  const goNext = () => setActiveIdx((prev) => (prev + 1) % normalizedCards.length);
+  const goPrev = () => setActiveIdx((prev) => (prev - 1 + normalizedCards.length) % normalizedCards.length);
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-[28px] border border-slate-200 bg-white p-5 md:p-7 shadow-sm">
+        <div className="grid grid-cols-1 md:grid-cols-[220px_auto_1fr] gap-5 md:gap-7 items-center">
+          <div className="mx-auto w-44 h-44 rounded-full bg-[#18acd4] text-[#0a2d63] flex items-center justify-center shadow-sm">
+            {active.imageUrl ? (
+              <img
+                src={active.imageUrl}
+                alt={active.title || 'Pop card visual'}
+                className="w-full h-full rounded-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <ActiveIcon className="w-20 h-20" />
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={goNext}
+            className="mx-auto h-12 w-12 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors flex items-center justify-center"
+            aria-label="Next card"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+          <div className="text-left space-y-3">
+            <h3 className="text-xl md:text-2xl font-bold text-slate-900 leading-tight">{active.title || 'Key concept'}</h3>
+            <div className="prose prose-slate prose-sm max-w-none text-slate-700">
+              <Markdown>{formatContent(active.content || '')}</Markdown>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 flex items-center justify-center gap-2">
+          {normalizedCards.map((_, idx) => (
+            <button
+              key={`pop-dot-${idx}`}
+              type="button"
+              onClick={() => setActiveIdx(idx)}
+              className={cn(
+                "h-2.5 w-2.5 rounded-full transition-all",
+                idx === activeIdx ? "bg-sky-500" : "bg-slate-200 hover:bg-slate-300"
+              )}
+              aria-label={`Open card ${idx + 1}`}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        {normalizedCards.map((card, idx) => {
+          const IconComponent = (card.icon && (LucideIcons as any)[card.icon]) || LucideIcons.Info;
+          const isActive = idx === activeIdx;
+          return (
+            <button
+              key={`pop-card-trigger-${idx}`}
+              type="button"
+              onClick={() => {
+                setActiveIdx(idx);
+                setModalOpen(true);
+              }}
+              className={cn(
+                "rounded-2xl border p-4 text-left transition-all",
+                isActive ? "border-sky-300 bg-sky-50" : "border-slate-200 bg-white hover:border-slate-300"
+              )}
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-[#18acd4] text-[#0a2d63] flex items-center justify-center shrink-0">
+                  <IconComponent className="w-5 h-5" />
+                </div>
+                <p className="text-sm font-semibold text-slate-900 truncate">{card.title || `Card ${idx + 1}`}</p>
+              </div>
+              <p className="mt-2 text-xs text-slate-500 line-clamp-2">{String(card.content || '').trim()}</p>
+            </button>
+          );
+        })}
+      </div>
+
+      <AnimatePresence>
+        {modalOpen ? (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 md:p-8">
+            <motion.button
+              type="button"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+              aria-label="Close pop card modal"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.97, y: 10 }}
+              className="relative w-full max-w-4xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden"
+            >
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
+                <button
+                  type="button"
+                  onClick={goPrev}
+                  className="p-2 rounded-lg hover:bg-white text-slate-600 transition-colors"
+                  aria-label="Previous card"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <p className="text-sm font-semibold text-slate-700">{activeIdx + 1} / {normalizedCards.length}</p>
+                <button
+                  type="button"
+                  onClick={() => setModalOpen(false)}
+                  className="p-2 rounded-lg hover:bg-white text-slate-600 transition-colors"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 md:p-8 grid grid-cols-1 md:grid-cols-[1fr_220px] gap-6 items-start">
+                <div>
+                  <h4 className="text-2xl font-bold text-slate-900 mb-3">{active.title || `Card ${activeIdx + 1}`}</h4>
+                  <div className="prose prose-slate max-w-none text-slate-700">
+                    <Markdown>{formatContent(active.content || '')}</Markdown>
+                  </div>
+                </div>
+                <div className="mx-auto w-40 h-40 rounded-full bg-[#18acd4] text-[#0a2d63] flex items-center justify-center shadow-sm">
+                  {active.imageUrl ? (
+                    <img
+                      src={active.imageUrl}
+                      alt={active.title || 'Pop card visual'}
+                      className="w-full h-full rounded-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <ActiveIcon className="w-20 h-20" />
+                  )}
+                </div>
+              </div>
+
+              <div className="px-6 pb-6">
+                <button
+                  type="button"
+                  onClick={goNext}
+                  className="w-full md:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 px-4 py-2.5 text-sm font-semibold transition-colors"
+                >
+                  Next card
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 };

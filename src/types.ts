@@ -8,7 +8,8 @@ export enum ContentType {
   LEARNING_CARD = "LEARNING_CARD",
   ACCORDION = "ACCORDION",
   HOTSPOT = "HOTSPOT",
-  CAROUSEL = "CAROUSEL"
+  CAROUSEL = "CAROUSEL",
+  POP_CARD = "POP_CARD",
 }
 
 export interface QuizQuestion {
@@ -45,7 +46,14 @@ export interface ModuleContent {
   type: ContentType | string;
   title: string;
   lessonText?: string;
-  data: any;
+  data: {
+    references?: Array<{
+      title: string;
+      url: string;
+      kind: 'youtube' | 'web' | 'doc';
+    }>;
+    [key: string]: any;
+  };
 }
 
 export interface LessonStep {
@@ -85,11 +93,95 @@ export interface AssessmentQuestion {
   options?: string[];
 }
 
+export interface InterviewRecommendedJob {
+  id: string;
+  title: string;
+  reason: string;
+}
+
+export interface InterviewRoleBlueprint {
+  jobTitle: string;
+  roleSummary: string;
+  responsibilities: string[];
+  requirements: string[];
+}
+
+export interface InterviewQuestion {
+  id: string;
+  question: string;
+  focus: string;
+}
+
+export interface InterviewSession {
+  role: InterviewRoleBlueprint;
+  questions: InterviewQuestion[];
+  generatedAt: string;
+}
+
+export interface InterviewAnswerFeedback {
+  questionId: string;
+  feedback: string;
+  sampleResponse: string;
+  toneFeedback: string;
+  grammarFeedback: string;
+  pronunciationFeedback: string;
+  riskFlags: string[];
+  score: number;
+}
+
+export interface InterviewFinalReview {
+  summary: string;
+  strengths: string[];
+  improvements: string[];
+  hiringRiskNotes: string[];
+  nextSteps: string[];
+}
+
 export type UserSegment = 'youth' | 'educator' | 'displaced' | 'community_org';
 export type ConnectivityLevel = 'offline_first' | 'low_bandwidth' | 'normal';
 export type CourseVisibility = 'private' | 'public';
 export type ModerationStatus = 'clean' | 'under_review' | 'flagged' | 'hidden';
 export type SupportedLocale = 'en' | 'my' | 'id' | 'ms' | 'th' | 'vi' | 'tl' | 'km' | 'lo';
+export type CvDeclaredFormat = 'europass' | 'other';
+
+export interface CvExperienceItem {
+  role: string;
+  organization: string;
+  period: string;
+  highlights: string[];
+}
+
+export interface CvEducationItem {
+  program: string;
+  institution: string;
+  period: string;
+}
+
+export interface CvParsedProfile {
+  fullName: string;
+  headline: string;
+  summary: string;
+  location: string;
+  email: string;
+  phone: string;
+  profileImageDataUrl?: string;
+  skills: string[];
+  languages: string[];
+  experience: CvExperienceItem[];
+  education: CvEducationItem[];
+  certifications: string[];
+}
+
+export interface CvAnalysisResult {
+  valid: boolean;
+  format: 'europass' | 'other' | 'unknown';
+  confidence: number;
+  issues: string[];
+  fileName?: string;
+  mimeType?: string;
+  parsed: CvParsedProfile | null;
+  updatedAt?: string;
+}
 
 export interface UserProfile {
   id: string;
@@ -99,9 +191,14 @@ export interface UserProfile {
   learningGoal: string;
   preferredLanguage: SupportedLocale;
   region: string;
-  discoverySource?: 'social_media' | 'friend' | 'school' | 'community' | 'other';
+  discoverySource?: 'social_media' | 'friend' | 'school' | 'community' | 'other' | 'x_twitter' | 'linkedin' | 'youtube' | 'newsletter' | 'conference' | 'friend_colleague' | 'google' | 'llm' | 'other_not_sure';
   deviceClass: 'mobile' | 'desktop' | 'tablet' | 'unknown';
   lowBandwidthMode?: boolean;
+  professionalVisibility?: 'public' | 'private';
+  cvRequiredFormat?: CvDeclaredFormat;
+  cvValidated?: boolean;
+  cvUpdatedAt?: string;
+  cvFileName?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -113,6 +210,17 @@ export interface ImpactMetrics {
   completionRate: number;
   avgTimeToCompletionMins: number;
   d7Retention: number;
+}
+
+export interface LearningCourseSummary {
+  courseId: string;
+  ownerId: string;
+  title: string;
+  description: string;
+  visibility: CourseVisibility;
+  startedAt: string;
+  lastActiveAt: string;
+  metrics: ImpactMetrics;
 }
 
 export interface SyncQueueItem {
@@ -143,9 +251,51 @@ export interface PublicCoursePost {
   visibility: CourseVisibility;
   moderationStatus: ModerationStatus;
   reactions: number;
+  upvotes: number;
+  downvotes: number;
+  userReaction?: 'up' | 'down' | null;
   comments: number;
   saves: number;
   createdAt: string;
+}
+
+export interface CourseAnalyticsPoint {
+  date: string;
+  completionRate: number;
+}
+
+export interface CourseAnalyticsSummary {
+  courseId: string;
+  title: string;
+  upvotes: number;
+  downvotes: number;
+  downloads: number;
+  comments: number;
+  learners: number;
+  completedLearners: number;
+  averageCompletionRate: number;
+  trend: CourseAnalyticsPoint[];
+}
+
+export interface PublicCreatorProfile {
+  id: string;
+  displayName: string;
+  headline: string;
+  summary: string;
+  profileImageDataUrl: string;
+  region: string;
+  preferredLanguage: string;
+  userSegment: UserSegment;
+  professionalVisibility: 'public' | 'private';
+  stats: {
+    totalLikes: number;
+    totalFollowers: number;
+    totalFollowing: number;
+    publicCourses: number;
+  };
+  dashboard: CvParsedProfile | null;
+  courses: PublicCoursePost[];
+  isFollowing: boolean;
 }
 
 export interface Cohort {
@@ -167,10 +317,14 @@ export interface AbuseReport {
 
 export type RouterConfig = {
   mode: 'auto' | 'manual';
-  provider: 'auto' | 'gemini' | 'openai' | 'anthropic' | 'openrouter';
+  provider: 'auto' | 'openrouter' | 'mistral' | 'ollama' | 'gemini' | 'openai' | 'anthropic';
   model: string; // 'auto' or provider model id
   // Optional, mostly for Gemini rotation
   modelCandidates?: string[];
+  // Force strict AI generation (no local fallback content)
+  strictAi?: boolean;
+  // Bypass generation cache (fresh provider call)
+  noCache?: boolean;
 };
 
 export interface ProfileContext {

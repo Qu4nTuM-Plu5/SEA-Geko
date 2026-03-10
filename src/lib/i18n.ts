@@ -1,318 +1,174 @@
 import { SupportedLocale } from "../types";
+import en from "../locales/en.json";
+import my from "../locales/my.json";
+import id from "../locales/id.json";
+import ms from "../locales/ms.json";
+import th from "../locales/th.json";
+import vi from "../locales/vi.json";
+import tl from "../locales/tl.json";
+import km from "../locales/km.json";
+import lo from "../locales/lo.json";
 
-export const SUPPORTED_LOCALES: SupportedLocale[] = ['en', 'my', 'id', 'ms', 'th', 'vi', 'tl', 'km', 'lo'];
+export const SUPPORTED_LOCALES: SupportedLocale[] = ["en", "my", "id", "ms", "th", "vi", "tl", "km", "lo"];
 
 type Dict = Record<string, string>;
 
-const EN: Dict = {
-  appName: 'SEA-Geko',
-  lang: 'Lang',
-  generate: 'Generate',
-  generating: 'Drafting...',
-  online: 'Online',
-  offline: 'Offline',
-  lowBandwidth: 'Low bandwidth mode',
-  downloadCourse: 'Download course',
-  downloadedCourses: 'Downloaded courses',
-  downloadedInAccount: 'Downloaded courses in this account',
-  noDownloadsYet: 'No downloaded courses yet.',
-  open: 'Open',
-  account: 'Account',
-  navLearn: 'Learn',
-  navCommunity: 'Community',
-  navLeaderboard: 'Leaderboard',
-  navProfile: 'Profile',
-  navDownloads: 'Downloads',
-  leaderboardTitle: 'Leaderboard',
-  leaderboardSubtitle: 'Track your rank with XP, consistency, and course performance.',
-  heroTitleLine1: 'What do you want to',
-  heroTitleLine2: 'master today?',
-  heroSubtitle: 'SEA-Geko crafts personalized, interactive learning paths in seconds. Enter a topic to begin your journey.',
-  preparingAssessment: 'Preparing your assessment...',
-  preparingAssessmentSub: 'Tailoring questions to your specific goals.',
-  assessmentPaused: 'Assessment paused',
-  assessmentErrorSub: 'We encountered an issue while tailoring your questions.',
-  profileStats: 'Profile Overview',
-  skillGain: 'Skill gain',
-  confidenceGain: 'Confidence gain',
-  completionRate: 'Completion rate',
-  dayStreak: 'Day streak',
-  totalXp: 'Total XP',
-  globalRank: 'Global rank',
-  createdCourses: 'Created courses',
-  noCreatedCourses: 'No created courses yet.',
-  analyticsOverview: 'Analytics studio',
-  analyticsHint: 'Per-course metrics and trend view',
-  courseOutline: 'Course Outline',
-  resources: 'Resources',
-  searchCourseOutline: 'Search course outline',
-  courseProgress: 'Course Progress',
-  planningModuleStructure: 'Planning module structure...',
-  moduleProgress: 'Module Progress',
-  selectModuleToBegin: 'Select a module to begin',
-  visibilityPublic: 'Public',
-  visibilityPrivate: 'Private',
-  toggleVisibility: 'Toggle visibility',
-  noCourseToPublish: 'Generate or open a course to publish.',
-  communityFeed: 'Community feed',
-  noPublicCourses: 'No public posts yet.',
-  react: 'React',
-  comment: 'Comment',
-  share: 'Share',
-  download: 'Download',
-  comments: 'Comments',
-  writeComment: 'Write a comment',
-  send: 'Send',
-  onboardingTitle: 'Tell us about your learning context',
-  onboardingNext: 'Next',
-  onboardingBack: 'Back',
-  onboardingSave: 'Save profile',
-  onboardingQuestionSegment: 'Which learner profile fits you best?',
-  onboardingQuestionConnectivity: 'How is your internet connectivity?',
-  onboardingQuestionLanguage: 'Which language do you prefer for the app?',
-  onboardingQuestionDevice: 'Which device do you use most?',
-  onboardingQuestionGoal: 'What is your current learning goal?',
-  onboardingQuestionRegion: 'Which region are you learning from?',
-  onboardingQuestionDiscovery: 'How did you hear about us?',
-  segmentYouth: 'Youth',
-  segmentEducator: 'Educator',
-  segmentDisplaced: 'Displaced',
-  segmentCommunityOrg: 'Community Organization',
-  connectivityNormal: 'Normal connectivity',
-  connectivityLowBandwidth: 'Low bandwidth',
-  connectivityOfflineFirst: 'Offline first',
-  deviceMobile: 'Mobile',
-  deviceDesktop: 'Desktop',
-  deviceTablet: 'Tablet',
-  deviceUnknown: 'Not sure',
-  publishPrivate: 'Publish private',
-  publishPublic: 'Publish public',
-  discovery_social_media: 'Social media',
-  discovery_friend: 'Friend',
-  discovery_school: 'School',
-  discovery_community: 'Community',
-  discovery_other: 'Other',
-  saveProfile: 'Save profile',
-  refresh: 'Refresh',
-  offlineLearningOnly: 'Offline mode supports learning only. AI edit and generation need internet.',
-};
-
-const MY: Dict = {
-  ...EN,
-  lang: 'ဘာသာ',
-  generate: 'ဖန်တီးမည်',
-  generating: 'ပြင်ဆင်နေသည်...',
-  online: 'အွန်လိုင်း',
-  offline: 'အော့ဖ်လိုင်း',
-  lowBandwidth: 'ဒေတာနည်းသုံးမုဒ်',
-  downloadCourse: 'သင်ခန်းစာ ဒေါင်းလုပ်',
-  downloadedCourses: 'ဒေါင်းလုပ်ထားသော သင်ခန်းစာများ',
-  downloadedInAccount: 'ဤအကောင့်ရှိ ဒေါင်းလုပ်ထားသော သင်ခန်းစာများ',
-  noDownloadsYet: 'ဒေါင်းလုပ်ထားသော သင်ခန်းစာ မရှိသေးပါ။',
-  open: 'ဖွင့်',
-  account: 'အကောင့်',
-  navLearn: 'လေ့လာရန်',
-  navCommunity: 'အသိုင်းအဝိုင်း',
-  navLeaderboard: 'အမှတ်ဇယား',
-  navProfile: 'ပရိုဖိုင်',
-  navDownloads: 'ဒေါင်းလုပ်များ',
-  leaderboardTitle: 'အမှတ်ဇယား',
-  leaderboardSubtitle: 'XP၊ ဆက်တိုက်လေ့လာမှုနှင့် သင်ခန်းစာစွမ်းဆောင်ရည်အလိုက် အဆင့်ကိုကြည့်ပါ။',
-  heroTitleLine1: 'ဒီနေ့ ဘာကို',
-  heroTitleLine2: 'ကျွမ်းကျင်ချင်ပါသလဲ?',
-  heroSubtitle: 'SEA-Geko က သင့်အတွက် ကိုယ်ပိုင်သင်ယူမှုလမ်းကြောင်းကို လျင်မြန်စွာဖန်တီးပေးပါသည်။',
-  preparingAssessment: 'အခြေခံစစ်ဆေးမှုကို ပြင်ဆင်နေသည်...',
-  preparingAssessmentSub: 'သင်၏ရည်မှန်းချက်နှင့် ကိုက်ညီအောင် မေးခွန်းများကို စီစဉ်နေသည်။',
-  assessmentPaused: 'စစ်ဆေးမှု ခေတ္တရပ်ထားသည်',
-  assessmentErrorSub: 'မေးခွန်းများကို စီစဉ်စဉ် ပြဿနာတစ်ခု ဖြစ်ပွားခဲ့သည်။',
-  profileStats: 'ပရိုဖိုင် အကျဉ်းချုပ်',
-  skillGain: 'ကျွမ်းကျင်မှု တိုးတက်မှု',
-  confidenceGain: 'ယုံကြည်မှု တိုးတက်မှု',
-  completionRate: 'ပြီးမြောက်နှုန်း',
-  dayStreak: 'ဆက်တိုက်ရက်',
-  totalXp: 'စုစုပေါင်း XP',
-  globalRank: 'အဆင့်',
-  createdCourses: 'ဖန်တီးထားသော သင်ခန်းစာများ',
-  noCreatedCourses: 'ဖန်တီးထားသော သင်ခန်းစာ မရှိသေးပါ။',
-  analyticsOverview: 'Analytics စင်တာ',
-  analyticsHint: 'သင်ခန်းစာတစ်ခုချင်းစီ၏ မက်ထရစ်နှင့် ပြောင်းလဲမှု',
-  courseOutline: 'သင်ခန်းစာ အစီအစဉ်',
-  resources: 'အရင်းအမြစ်များ',
-  searchCourseOutline: 'သင်ခန်းစာအစီအစဉ် ရှာမည်',
-  courseProgress: 'သင်ခန်းစာတိုးတက်မှု',
-  planningModuleStructure: 'Module ဖွဲ့စည်းမှုကို စီစဉ်နေသည်...',
-  moduleProgress: 'Module တိုးတက်မှု',
-  selectModuleToBegin: 'စတင်ရန် module တစ်ခုကို ရွေးပါ',
-  visibilityPublic: 'အများပြည်သူ',
-  visibilityPrivate: 'သီးသန့်',
-  toggleVisibility: 'မြင်နိုင်မှု ပြောင်းမည်',
-  noCourseToPublish: 'ထုတ်ဝေရန် သင်ခန်းစာတစ်ခု ဖန်တီးပါ သို့မဟုတ် ဖွင့်ပါ။',
-  communityFeed: 'အသိုင်းအဝိုင်း Feed',
-  noPublicCourses: 'အများပြည်သူ ပို့စ် မရှိသေးပါ။',
-  react: 'တုံ့ပြန်',
-  comment: 'မှတ်ချက်',
-  share: 'မျှဝေ',
-  download: 'ဒေါင်းလုပ်',
-  comments: 'မှတ်ချက်များ',
-  writeComment: 'မှတ်ချက်ရေးပါ',
-  send: 'ပို့မည်',
-  onboardingTitle: 'သင်ယူမှုအခြေအနေကို ပြောပြပါ',
-  onboardingNext: 'ရှေ့သို့',
-  onboardingBack: 'နောက်သို့',
-  onboardingSave: 'ပရိုဖိုင် သိမ်းမည်',
-  onboardingQuestionSegment: 'သင်နှင့်အကိုက်ညီဆုံး သင်ယူသူအမျိုးအစားကို ရွေးပါ။',
-  onboardingQuestionConnectivity: 'အင်တာနက်ချိတ်ဆက်မှုအခြေအနေ ဘယ်လိုရှိပါသလဲ?',
-  onboardingQuestionLanguage: 'App အတွက် အနှစ်သက်ဆုံး ဘာသာကို ရွေးပါ။',
-  onboardingQuestionDevice: 'အများဆုံး အသုံးပြုသော စက်အမျိုးအစား?',
-  onboardingQuestionGoal: 'လက်ရှိ သင်ယူရည်မှန်းချက်ကဘာလဲ?',
-  onboardingQuestionRegion: 'သင်ယူနေသော ဒေသကို ထည့်ပါ။',
-  onboardingQuestionDiscovery: 'ကျွန်ုပ်တို့ကို ဘယ်လိုသိလာပါသလဲ?',
-  segmentYouth: 'လူငယ်',
-  segmentEducator: 'ဆရာ/ဆရာမ',
-  segmentDisplaced: 'ရွှေ့ပြောင်းနေသူ',
-  segmentCommunityOrg: 'အသိုင်းအဝိုင်းအဖွဲ့အစည်း',
-  connectivityNormal: 'ပုံမှန်ချိတ်ဆက်မှု',
-  connectivityLowBandwidth: 'ဒေတာနည်းချိတ်ဆက်မှု',
-  connectivityOfflineFirst: 'အော့ဖ်လိုင်းဦးစားပေး',
-  deviceMobile: 'မိုဘိုင်း',
-  deviceDesktop: 'ကွန်ပျူတာ',
-  deviceTablet: 'တက်ဘလက်',
-  deviceUnknown: 'မသေချာ',
-  publishPrivate: 'သီးသန့်အဖြစ် ထုတ်ဝေမည်',
-  publishPublic: 'အများပြည်သူအဖြစ် ထုတ်ဝေမည်',
-  discovery_social_media: 'Social media',
-  discovery_friend: 'သူငယ်ချင်း',
-  discovery_school: 'ကျောင်း',
-  discovery_community: 'အသိုင်းအဝိုင်း',
-  discovery_other: 'အခြား',
-  saveProfile: 'ပရိုဖိုင် သိမ်းမည်',
-  refresh: 'ပြန်လည်တင်',
-  offlineLearningOnly: 'Offline မုဒ်တွင် သင်ယူခြင်းသာ ရရှိနိုင်ပြီး AI ပြင်ဆင်မှု/ဖန်တီးမှုအတွက် အင်တာနက်လိုအပ်သည်။',
-};
-
-const TH: Dict = {
-  ...EN,
-  lang: 'ภาษา',
-  generate: 'สร้าง',
-  generating: 'กำลังร่าง...',
-  online: 'ออนไลน์',
-  offline: 'ออฟไลน์',
-  lowBandwidth: 'โหมดประหยัดข้อมูล',
-  downloadCourse: 'ดาวน์โหลดคอร์ส',
-  downloadedCourses: 'คอร์สที่ดาวน์โหลด',
-  downloadedInAccount: 'คอร์สที่ดาวน์โหลดในบัญชีนี้',
-  noDownloadsYet: 'ยังไม่มีคอร์สที่ดาวน์โหลด',
-  open: 'เปิด',
-  account: 'บัญชี',
-  navLearn: 'เรียนรู้',
-  navCommunity: 'ชุมชน',
-  navLeaderboard: 'อันดับ',
-  navProfile: 'โปรไฟล์',
-  navDownloads: 'ดาวน์โหลด',
-  leaderboardTitle: 'อันดับ',
-  leaderboardSubtitle: 'ติดตามอันดับจาก XP ความสม่ำเสมอ และผลลัพธ์ของคอร์ส',
-  heroTitleLine1: 'วันนี้คุณอยาก',
-  heroTitleLine2: 'เก่งเรื่องอะไร?',
-  heroSubtitle: 'SEA-Geko สร้างเส้นทางการเรียนรู้เฉพาะคุณได้ในไม่กี่วินาที',
-  preparingAssessment: 'กำลังเตรียมแบบประเมินของคุณ...',
-  preparingAssessmentSub: 'กำลังปรับคำถามให้ตรงกับเป้าหมายของคุณ',
-  assessmentPaused: 'หยุดการประเมินชั่วคราว',
-  assessmentErrorSub: 'เกิดปัญหาระหว่างการปรับคำถามให้เหมาะกับคุณ',
-  profileStats: 'ภาพรวมโปรไฟล์',
-  skillGain: 'พัฒนาทักษะ',
-  confidenceGain: 'ความมั่นใจที่เพิ่มขึ้น',
-  completionRate: 'อัตราการเรียนจบ',
-  dayStreak: 'สถิติต่อเนื่อง',
-  totalXp: 'XP รวม',
-  globalRank: 'อันดับรวม',
-  createdCourses: 'คอร์สที่สร้าง',
-  noCreatedCourses: 'ยังไม่มีคอร์สที่สร้าง',
-  analyticsOverview: 'สตูดิโอวิเคราะห์',
-  analyticsHint: 'เมตริกและแนวโน้มรายคอร์ส',
-  courseOutline: 'โครงร่างคอร์ส',
-  resources: 'แหล่งข้อมูล',
-  searchCourseOutline: 'ค้นหาโครงร่างคอร์ส',
-  courseProgress: 'ความคืบหน้าคอร์ส',
-  planningModuleStructure: 'กำลังวางโครงสร้างโมดูล...',
-  moduleProgress: 'ความคืบหน้าโมดูล',
-  selectModuleToBegin: 'เลือกโมดูลเพื่อเริ่มต้น',
-  visibilityPublic: 'สาธารณะ',
-  visibilityPrivate: 'ส่วนตัว',
-  toggleVisibility: 'สลับการมองเห็น',
-  noCourseToPublish: 'สร้างหรือเปิดคอร์สก่อนเผยแพร่',
-  communityFeed: 'ฟีดชุมชน',
-  noPublicCourses: 'ยังไม่มีโพสต์สาธารณะ',
-  react: 'ถูกใจ',
-  comment: 'แสดงความคิดเห็น',
-  share: 'แชร์',
-  download: 'ดาวน์โหลด',
-  comments: 'ความคิดเห็น',
-  writeComment: 'พิมพ์ความคิดเห็น',
-  send: 'ส่ง',
-  onboardingTitle: 'บอกบริบทการเรียนรู้ของคุณ',
-  onboardingNext: 'ถัดไป',
-  onboardingBack: 'ย้อนกลับ',
-  onboardingSave: 'บันทึกโปรไฟล์',
-  onboardingQuestionSegment: 'คุณเป็นผู้เรียนกลุ่มใด?',
-  onboardingQuestionConnectivity: 'การเชื่อมต่ออินเทอร์เน็ตของคุณเป็นอย่างไร?',
-  onboardingQuestionLanguage: 'ต้องการใช้ภาษาใดในแอป?',
-  onboardingQuestionDevice: 'ใช้อุปกรณ์ใดบ่อยที่สุด?',
-  onboardingQuestionGoal: 'เป้าหมายการเรียนรู้ของคุณคืออะไร?',
-  onboardingQuestionRegion: 'คุณเรียนจากภูมิภาคใด?',
-  onboardingQuestionDiscovery: 'คุณรู้จักเราจากช่องทางใด?',
-  segmentYouth: 'เยาวชน',
-  segmentEducator: 'ผู้สอน',
-  segmentDisplaced: 'ผู้ย้ายถิ่น',
-  segmentCommunityOrg: 'องค์กรชุมชน',
-  connectivityNormal: 'การเชื่อมต่อปกติ',
-  connectivityLowBandwidth: 'แบนด์วิดท์ต่ำ',
-  connectivityOfflineFirst: 'เน้นออฟไลน์',
-  deviceMobile: 'มือถือ',
-  deviceDesktop: 'เดสก์ท็อป',
-  deviceTablet: 'แท็บเล็ต',
-  deviceUnknown: 'ไม่แน่ใจ',
-  publishPrivate: 'เผยแพร่แบบส่วนตัว',
-  publishPublic: 'เผยแพร่สาธารณะ',
-  discovery_social_media: 'โซเชียลมีเดีย',
-  discovery_friend: 'เพื่อนแนะนำ',
-  discovery_school: 'โรงเรียน',
-  discovery_community: 'ชุมชน',
-  discovery_other: 'อื่น ๆ',
-  saveProfile: 'บันทึกโปรไฟล์',
-  refresh: 'รีเฟรช',
-  offlineLearningOnly: 'โหมดออฟไลน์รองรับเฉพาะการเรียนรู้ การสร้าง/แก้ไขด้วย AI ต้องใช้อินเทอร์เน็ต',
-};
-
+const EN: Dict = en;
 const DICTIONARIES: Record<SupportedLocale, Dict> = {
-  en: EN,
-  my: MY,
-  th: TH,
-  id: { ...EN },
-  ms: { ...EN },
-  vi: { ...EN },
-  tl: { ...EN },
-  km: { ...EN },
-  lo: { ...EN },
+  en,
+  my,
+  id,
+  ms,
+  th,
+  vi,
+  tl,
+  km,
+  lo,
+};
+
+const flagFromCountry = (countryCode: string): string => {
+  const chars = String(countryCode || "")
+    .trim()
+    .toUpperCase()
+    .slice(0, 2)
+    .split("");
+  if (chars.length !== 2) return "";
+  return String.fromCodePoint(...chars.map((ch) => 127397 + ch.charCodeAt(0)));
+};
+
+export const LOCALE_META: Record<SupportedLocale, { flag: string; country: string; short: string; name: string }> = {
+  en: { flag: flagFromCountry("US"), country: "US", short: "EN", name: "English" },
+  my: { flag: flagFromCountry("MM"), country: "MM", short: "MM", name: "Myanmar" },
+  id: { flag: flagFromCountry("ID"), country: "ID", short: "ID", name: "Bahasa Indonesia" },
+  ms: { flag: flagFromCountry("MY"), country: "MY", short: "MS", name: "Bahasa Melayu" },
+  th: { flag: flagFromCountry("TH"), country: "TH", short: "TH", name: "Thai" },
+  vi: { flag: flagFromCountry("VN"), country: "VN", short: "VN", name: "Tieng Viet" },
+  tl: { flag: flagFromCountry("PH"), country: "PH", short: "TL", name: "Filipino" },
+  km: { flag: flagFromCountry("KH"), country: "KH", short: "KM", name: "Khmer" },
+  lo: { flag: flagFromCountry("LA"), country: "LA", short: "LO", name: "Lao" },
+};
+
+const SUPPORTED_LOCALE_SET = new Set<SupportedLocale>(SUPPORTED_LOCALES);
+
+export const normalizeSupportedLocale = (value: unknown, fallback: SupportedLocale = "en"): SupportedLocale => {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return fallback;
+  if (SUPPORTED_LOCALE_SET.has(raw as SupportedLocale)) return raw as SupportedLocale;
+
+  // Handle standard locale tags first (e.g. ms-MY, vi-VN, tl-PH)
+  // so region tokens do not get mistaken as language codes.
+  const localeLike = raw.replace(/[_/]+/g, "-").trim();
+  const primary = localeLike.split("-").map((token) => token.trim()).filter(Boolean)[0] || "";
+  if (SUPPORTED_LOCALE_SET.has(primary as SupportedLocale)) return primary as SupportedLocale;
+
+  const cleaned = raw.replace(/[_/]+/g, "-").replace(/[^a-z-]+/g, " ").trim();
+  const tokens = cleaned
+    .split(/\s+/)
+    .flatMap((token) => token.split("-"))
+    .map((token) => token.trim())
+    .filter(Boolean);
+  const tokenSet = new Set(tokens);
+  const hasToken = (...candidates: string[]): boolean => candidates.some((candidate) => tokenSet.has(candidate));
+  const hasText = (...candidates: string[]): boolean => candidates.some((candidate) => cleaned.includes(candidate));
+
+  if (hasToken("th") || hasText("thai")) return "th";
+  if (hasToken("my") || hasText("myanmar", "burmese")) return "my";
+  if (hasToken("id") || hasText("indonesian", "bahasa indonesia")) return "id";
+  if (hasToken("ms") || hasText("malay", "bahasa melayu")) return "ms";
+  if (hasToken("vi") || hasText("vietnamese", "tieng viet")) return "vi";
+  if (hasToken("tl", "fil", "ph") || hasText("filipino", "tagalog")) return "tl";
+  if (hasToken("km", "kh") || hasText("khmer")) return "km";
+  if (hasToken("lo", "la") || hasText("lao")) return "lo";
+  if (hasToken("en", "us", "gb") || hasText("english")) return "en";
+
+  const short = tokens.find((token) => token.length === 2 && SUPPORTED_LOCALE_SET.has(token as SupportedLocale));
+  if (short) return short as SupportedLocale;
+  return fallback;
+};
+
+const OVERRIDES: Partial<Record<SupportedLocale, Dict>> = {
+  my: {},
+  id: {
+    lang: "Bahasa",
+    lowBandwidth: "Mode hemat data",
+    navLearn: "Belajar",
+    navCommunity: "Komunitas",
+    navLeaderboard: "Papan Peringkat",
+    navProfile: "Profil",
+    navDownloads: "Unduhan",
+    generate: "Buat",
+    generating: "Menyusun...",
+    profileStats: "Ringkasan Profil",
+  },
+  ms: {
+    lang: "Bahasa",
+    lowBandwidth: "Mod jimat data",
+    navLearn: "Belajar",
+    navCommunity: "Komuniti",
+    navLeaderboard: "Papan Kedudukan",
+    navProfile: "Profil",
+    navDownloads: "Muat Turun",
+    generate: "Jana",
+    generating: "Menjana...",
+    profileStats: "Ringkasan Profil",
+  },
+  th: {
+    lang: "\u0e20\u0e32\u0e29\u0e32",
+  },
+  vi: {
+    lang: "Ngon ngu",
+    lowBandwidth: "Che do tiet kiem du lieu",
+    navLearn: "Hoc",
+    navCommunity: "Cong dong",
+    navLeaderboard: "Bang xep hang",
+    navProfile: "Ho so",
+    navDownloads: "Tai xuong",
+    generate: "Tao",
+    generating: "Dang tao...",
+    profileStats: "Tong quan ho so",
+  },
+  tl: {
+    lang: "Wika",
+    navLearn: "Matuto",
+    navCommunity: "Komunidad",
+    navLeaderboard: "Leaderboard",
+    navProfile: "Profile",
+    navDownloads: "Downloads",
+    generate: "Gumawa",
+    generating: "Gumagawa...",
+  },
+  km: {
+    lang: "áž—áž¶ážŸáž¶",
+  },
+  lo: {
+    lang: "àºžàº²àºªàº²",
+  },
 };
 
 export const getLocale = (): SupportedLocale => {
   try {
-    const raw = localStorage.getItem('nexus_locale');
-    if (raw && SUPPORTED_LOCALES.includes(raw as SupportedLocale)) return raw as SupportedLocale;
+    const raw = localStorage.getItem("nexus_locale");
+    if (raw) return normalizeSupportedLocale(raw, "en");
   } catch {
     // ignore
   }
-  return 'en';
+  return "en";
 };
 
 export const setLocale = (locale: SupportedLocale) => {
   try {
-    localStorage.setItem('nexus_locale', locale);
+    localStorage.setItem("nexus_locale", normalizeSupportedLocale(locale, "en"));
   } catch {
     // ignore
   }
 };
 
 export const t = (key: string, locale: SupportedLocale): string => {
-  return DICTIONARIES[locale]?.[key] || DICTIONARIES.en[key] || key;
+  const override = OVERRIDES[locale]?.[key];
+  if (override) return override;
+  const dict = DICTIONARIES[locale] || EN;
+  const english = EN[key] || key;
+  const localized = dict[key];
+  if (localized && localized.trim()) return localized;
+  return english;
 };

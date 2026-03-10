@@ -22,6 +22,19 @@ create table if not exists public.profiles (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.profile_cv (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  valid boolean not null default false,
+  format text not null default 'unknown',
+  confidence numeric(4,3) not null default 0,
+  file_name text not null default '',
+  mime_type text not null default '',
+  issues jsonb not null default '[]'::jsonb,
+  parsed jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.courses (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references auth.users(id) on delete cascade,
@@ -207,6 +220,7 @@ create table if not exists public.cohort_members (
 -- ----------------------------
 
 alter table public.profiles enable row level security;
+alter table public.profile_cv enable row level security;
 alter table public.courses enable row level security;
 alter table public.course_snapshots enable row level security;
 alter table public.user_courses enable row level security;
@@ -227,6 +241,9 @@ alter table public.moderation_actions enable row level security;
 
 create policy if not exists "profiles_owner_rw" on public.profiles
 for all using (auth.uid() = id) with check (auth.uid() = id);
+
+create policy if not exists "profile_cv_owner_rw" on public.profile_cv
+for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 create policy if not exists "courses_owner_rw" on public.courses
 for all using (auth.uid() = owner_id) with check (auth.uid() = owner_id);

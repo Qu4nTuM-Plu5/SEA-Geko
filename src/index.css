@@ -35,6 +35,189 @@
   40%, 60% { transform: translate3d(4px, 0, 0); }
 }
 
+.leaf-float {
+  position: absolute;
+  width: 30px;
+  height: 42px;
+  background: linear-gradient(135deg, rgba(224, 255, 233, 0.95) 0%, rgba(131, 236, 160, 0.75) 100%);
+  border-radius: 80% 0 80% 0;
+  transform: rotate(-18deg);
+  box-shadow: 0 6px 16px rgba(10, 35, 20, 0.14);
+  animation: leaf-drift 6s ease-in-out infinite;
+  opacity: 0.8;
+}
+
+.leaf-float::before {
+  content: "";
+  position: absolute;
+  inset: 10px 12px auto auto;
+  width: 2px;
+  height: 20px;
+  background: rgba(28, 90, 48, 0.45);
+  transform: rotate(-28deg);
+  transform-origin: top center;
+}
+
+@keyframes leaf-drift {
+  0% { transform: translate3d(0, 0, 0) rotate(-16deg); }
+  35% { transform: translate3d(34px, -24px, 0) rotate(10deg); }
+  70% { transform: translate3d(-14px, 20px, 0) rotate(-9deg); }
+  100% { transform: translate3d(0, 0, 0) rotate(-16deg); }
+}
+
+.ladybug-walker {
+  position: absolute;
+  width: 152px;
+  height: 78px;
+}
+
+.ladybug-trail {
+  position: absolute;
+  left: 2px;
+  top: 8px;
+  width: 132px;
+  height: 62px;
+  opacity: 0.68;
+}
+
+.ladybug-trail path {
+  fill: none;
+  stroke: rgba(129, 36, 52, 0.9);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 7 9;
+  animation: ladybug-trail-flow 1.4s linear infinite;
+}
+
+.ladybug-bug {
+  position: absolute;
+  right: 0;
+  top: 22px;
+  width: 32px;
+  height: 20px;
+  filter: drop-shadow(0 3px 8px rgba(12, 21, 44, 0.28));
+}
+
+.ladybug-bug::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 5px;
+  width: 7px;
+  height: 10px;
+  border-radius: 999px;
+  background: #0d0f15;
+  z-index: 3;
+}
+
+.ladybug-head {
+  position: absolute;
+  left: 1px;
+  top: 7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #0d0f15;
+  z-index: 4;
+}
+
+.ladybug-head::before,
+.ladybug-head::after {
+  content: "";
+  position: absolute;
+  top: -4px;
+  width: 5px;
+  height: 5px;
+  border-top: 1.3px solid #0d0f15;
+  border-right: 1.3px solid #0d0f15;
+  border-radius: 999px;
+}
+
+.ladybug-head::before {
+  left: -1px;
+  transform: rotate(-38deg);
+}
+
+.ladybug-head::after {
+  right: -1px;
+  transform: rotate(38deg) scaleX(-1);
+}
+
+.ladybug-wing {
+  position: absolute;
+  top: 0;
+  width: 14px;
+  height: 20px;
+  border-radius: 85% 85% 75% 75%;
+  background: linear-gradient(180deg, #ff534e 0%, #d82d2d 100%);
+  z-index: 2;
+}
+
+.ladybug-wing::before,
+.ladybug-wing::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  background: rgba(11, 12, 16, 0.96);
+}
+
+.ladybug-wing::before {
+  width: 4px;
+  height: 4px;
+  top: 5px;
+}
+
+.ladybug-wing::after {
+  width: 4px;
+  height: 4px;
+  top: 12px;
+}
+
+.ladybug-wing-left {
+  left: 8px;
+  transform-origin: right center;
+  animation: wing-flick-left 0.34s ease-in-out infinite;
+}
+
+.ladybug-wing-left::before { left: 4px; }
+.ladybug-wing-left::after { left: 8px; }
+
+.ladybug-wing-right {
+  left: 19px;
+  transform-origin: left center;
+  animation: wing-flick-right 0.34s ease-in-out infinite;
+}
+
+.ladybug-wing-right::before { right: 4px; }
+.ladybug-wing-right::after { right: 8px; }
+
+.ladybug-seam {
+  position: absolute;
+  left: 19px;
+  top: 2px;
+  width: 1.5px;
+  height: 17px;
+  background: rgba(13, 15, 21, 0.58);
+  border-radius: 999px;
+  z-index: 4;
+}
+
+@keyframes wing-flick-left {
+  0%, 100% { transform: rotate(-14deg) scaleY(1); }
+  50% { transform: rotate(-3deg) scaleY(0.9); }
+}
+
+@keyframes wing-flick-right {
+  0%, 100% { transform: rotate(14deg) scaleY(1); }
+  50% { transform: rotate(3deg) scaleY(0.9); }
+}
+
+@keyframes ladybug-trail-flow {
+  0% { stroke-dashoffset: 0; opacity: 0.45; }
+  50% { opacity: 0.92; }
+  100% { stroke-dashoffset: -34; opacity: 0.35; }
+}
+
 body {
   @apply antialiased;
 }

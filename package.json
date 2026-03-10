@@ -4,13 +4,17 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port=3000 --host=0.0.0.0",
+    "dev": "node scripts/dev-local.cjs",
+    "dev:web": "vite --port=3000 --host=0.0.0.0",
     "dev:local": "node scripts/dev-local.cjs",
     "dev:vercel": "npx --yes vercel dev --listen 3000",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
+    "i18n:fill": "node scripts/i18n-auto-fill.mjs",
+    "i18n:translate": "node scripts/i18n-auto-fill.mjs --translate",
+    "i18n:qa": "node scripts/i18n-qa.mjs",
     "dev:server": "node server/server.cjs",
     "start": "node server/server.cjs",
     "start:prod": "npm run build && node server/server.cjs"

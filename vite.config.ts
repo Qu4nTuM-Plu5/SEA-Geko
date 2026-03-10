@@ -4,6 +4,7 @@ import path from 'path';
 import { defineConfig } from 'vite';
 
 export default defineConfig(() => {
+  const apiPort = Number(process.env.VITE_API_PORT || 8787);
   return {
     plugins: [react(), tailwindcss()],
     resolve: {
@@ -20,7 +21,7 @@ export default defineConfig(() => {
       },
       proxy: {
         '/api': {
-          target: 'http://localhost:8787',
+          target: `http://localhost:${apiPort}`,
           changeOrigin: true,
         }
       }

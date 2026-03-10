@@ -6,19 +6,32 @@ import {
   RouterConfig,
   UserProfile,
   ImpactMetrics,
+  LearningCourseSummary,
+  CourseAnalyticsSummary,
+  InterviewRecommendedJob,
+  InterviewSession,
+  InterviewAnswerFeedback,
+  InterviewFinalReview,
   SyncQueueItem,
   PublicCoursePost,
+  PublicCreatorProfile,
   Cohort,
   ProfileContext,
+  CvAnalysisResult,
+  CvDeclaredFormat,
 } from "../types";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const DEFAULT_GEMINI_CANDIDATES = [
-  'gemini-3-flash-preview',
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-lite',
   'gemini-1.5-flash',
   'gemini-1.5-pro'
 ];
+const DEPRECATED_MODELS = new Set(['gemini-3-flash-preview']);
 
 const DEFAULT_PROFILE_CONTEXT: ProfileContext = {
   userSegment: 'youth',
@@ -27,6 +40,27 @@ const DEFAULT_PROFILE_CONTEXT: ProfileContext = {
   learningGoal: '',
   region: 'ASEAN',
   lowBandwidthMode: false,
+};
+
+const RETRY_PROFILE = {
+  fastGeneration: { retries: 3, delayMs: 1000, maxDelayMs: 7000 },
+  assessment: { retries: 4, delayMs: 1300, maxDelayMs: 12000 },
+  outline: { retries: 4, delayMs: 1400, maxDelayMs: 12000 },
+  standard: { retries: 3, delayMs: 1500, maxDelayMs: 8000 },
+  tutor: { retries: 2, delayMs: 1200, maxDelayMs: 6000 },
+  interviewSession: { retries: 0, delayMs: 700, maxDelayMs: 1200 },
+} as const;
+
+const isTokenBudgetErrorMessage = (message: string): boolean => {
+  const msg = String(message || '').toLowerCase();
+  return (
+    msg.includes('requires more credits') ||
+    msg.includes('fewer max_tokens') ||
+    msg.includes('requested up to') ||
+    msg.includes('can only afford') ||
+    msg.includes('insufficient credits') ||
+    msg.includes('payment required')
+  );
 };
 
 const getProfileContext = (): ProfileContext => {
@@ -51,6 +85,8 @@ const getProfileContext = (): ProfileContext => {
 
 const getAccountId = (): string => {
   try {
+    const authUserId = localStorage.getItem('nexus_supabase_user_id');
+    if (authUserId) return authUserId;
     const key = 'nexus_account_id';
     let id = localStorage.getItem(key);
     if (!id) {
@@ -64,6 +100,18 @@ const getAccountId = (): string => {
 };
 
 const getRouterConfig = (): RouterConfig => {
+  const sanitizeModel = (value: unknown): string => {
+    const model = String(value || 'auto').trim() || 'auto';
+    return DEPRECATED_MODELS.has(model) ? 'auto' : model;
+  };
+  const sanitizeCandidates = (value: unknown): string[] | undefined => {
+    if (!Array.isArray(value)) return undefined;
+    const out = value
+      .map((m) => String(m || '').trim())
+      .filter((m) => m && !DEPRECATED_MODELS.has(m));
+    return out.length ? out : undefined;
+  };
+
   try {
     const raw = localStorage.getItem('nexus_router_config');
     if (raw) {
@@ -71,8 +119,8 @@ const getRouterConfig = (): RouterConfig => {
       return {
         mode: parsed.mode === 'manual' ? 'manual' : 'auto',
         provider: parsed.provider || 'auto',
-        model: parsed.model || 'auto',
-        modelCandidates: Array.isArray(parsed.modelCandidates) ? parsed.modelCandidates : undefined,
+        model: sanitizeModel(parsed.model),
+        modelCandidates: sanitizeCandidates(parsed.modelCandidates),
       };
     }
   } catch {
@@ -87,7 +135,7 @@ const getRouterConfig = (): RouterConfig => {
     const manual = localStorage.getItem('nexus_model_manual');
     if (m === 'manual' && manual) {
       mode = 'manual';
-      model = manual;
+      model = sanitizeModel(manual);
     }
   } catch {
     // ignore
@@ -98,7 +146,7 @@ const getRouterConfig = (): RouterConfig => {
   try {
     const ls = localStorage.getItem('nexus_model_candidates');
     if (ls) {
-      const parsed = ls.split(',').map(s => s.trim()).filter(Boolean);
+      const parsed = ls.split(',').map(s => s.trim()).filter((m) => m && !DEPRECATED_MODELS.has(m));
       if (parsed.length) modelCandidates = parsed;
     }
   } catch {
@@ -113,7 +161,7 @@ const getRouterConfig = (): RouterConfig => {
   };
 };
 
-async function fetchJsonWithTimeout(url: string, init: RequestInit, timeoutMs = 45000) {
+async function fetchJsonWithTimeout(url: string, init: RequestInit, timeoutMs = 90000) {
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), timeoutMs);
   try {
@@ -122,6 +170,14 @@ async function fetchJsonWithTimeout(url: string, init: RequestInit, timeoutMs = 
     let json: any = null;
     try { json = text ? JSON.parse(text) : null; } catch { /* ignore */ }
     return { ok: res.ok, status: res.status, text, json };
+  } catch (e: any) {
+    const aborted = e?.name === 'AbortError' || String(e?.message || '').toLowerCase().includes('aborted');
+    return {
+      ok: false,
+      status: aborted ? 503 : 0,
+      text: aborted ? 'Request timed out before provider response.' : String(e?.message || 'Request failed'),
+      json: null,
+    };
   } finally {
     clearTimeout(t);
   }
@@ -129,9 +185,10 @@ async function fetchJsonWithTimeout(url: string, init: RequestInit, timeoutMs = 
 
 const withClientRetry = async <T>(
   fn: () => Promise<T>,
-  retries = 6,
-  delayMs = 4000,
-  onRetry?: (attemptRemaining: number, delay: number) => void
+  retries = 3,
+  delayMs = 1500,
+  onRetry?: (attemptRemaining: number, delay: number) => void,
+  maxDelayMs = 8000
 ): Promise<T> => {
   let backoff = delayMs;
   let lastErr: any = null;
@@ -143,9 +200,18 @@ const withClientRetry = async <T>(
       lastErr = e;
       const status = e?.status || 0;
       const msg = String(e?.message || '').toLowerCase();
-      const isBusy = status === 429 || status === 503 || msg.includes('rate') || msg.includes('quota') || msg.includes('busy');
+      const isBudgetError = status === 402 || isTokenBudgetErrorMessage(msg);
+      if (isBudgetError) throw e;
+      const isBusy = status === 429
+        || status === 503
+        || msg.includes('rate')
+        || msg.includes('quota')
+        || msg.includes('busy')
+        || msg.includes('timeout')
+        || msg.includes('timed out')
+        || msg.includes('aborted');
       if (remaining > 0 && isBusy) {
-        const wait = Math.min(backoff, 30000);
+        const wait = Math.min(backoff, maxDelayMs);
         onRetry?.(remaining, wait);
         await sleep(wait);
         backoff *= 2;
@@ -158,13 +224,22 @@ const withClientRetry = async <T>(
   throw lastErr;
 };
 
-async function postApi<T>(path: string, body: any): Promise<T> {
+type ApiEnvelope<T> = {
+  data: T;
+  warning?: string;
+};
+
+async function postApiEnvelope<T>(path: string, body: any): Promise<ApiEnvelope<T>> {
   const router = getRouterConfig();
   const profileContext = getProfileContext();
   const accountId = getAccountId();
-  const isAiPath = path.startsWith('/api/generate/') || path.startsWith('/api/tutor/');
-  const payload = isAiPath
-    ? { ...body, router, profileContext, accountId }
+  const isAiPath = path.startsWith('/api/generate/') || path.startsWith('/api/tutor/') || path.startsWith('/api/interview/');
+  const useAiRouting = isAiPath || path === '/api/profile/cv/analyze';
+  const aiRouter: RouterConfig = useAiRouting
+    ? { ...router, strictAi: true, noCache: true }
+    : router;
+  const payload = useAiRouting
+    ? { ...body, router: aiRouter, profileContext, accountId }
     : { ...body, accountId };
 
   const r = await fetchJsonWithTimeout(path, {
@@ -180,7 +255,15 @@ async function postApi<T>(path: string, body: any): Promise<T> {
     throw e;
   }
 
-  return r.json?.data as T;
+  return {
+    data: r.json?.data as T,
+    warning: typeof r.json?.warning === 'string' ? r.json.warning : undefined,
+  };
+}
+
+async function postApi<T>(path: string, body: any): Promise<T> {
+  const envelope = await postApiEnvelope<T>(path, body);
+  return envelope.data;
 }
 
 export const aiService = {
@@ -189,12 +272,40 @@ export const aiService = {
     return r.json;
   },
 
+  async getAuthConfig(): Promise<{ enabled: boolean }> {
+    const r = await fetchJsonWithTimeout('/api/auth/config', { method: 'GET' }, 12000);
+    if (!r.ok) return { enabled: false };
+    return { enabled: !!r.json?.data?.enabled };
+  },
+
+  async signUp(email: string, password: string): Promise<{
+    user: { id: string; email?: string };
+    session?: { access_token?: string; refresh_token?: string; expires_at?: number | null };
+  }> {
+    return await postApi('/api/auth/sign-up', { email, password });
+  },
+
+  async signIn(email: string, password: string): Promise<{
+    user: { id: string; email?: string };
+    session?: { access_token?: string; refresh_token?: string; expires_at?: number | null };
+  }> {
+    return await postApi('/api/auth/sign-in', { email, password });
+  },
+
+  async signOut(accessToken?: string): Promise<void> {
+    await postApi('/api/auth/sign-out', { accessToken: accessToken || '' });
+  },
+
   formatError(error: any): string {
     if (!error) return "An unknown error occurred.";
     const msg = error.message || String(error);
 
     if ((error.status === 429) || msg.toLowerCase().includes('rate') || msg.toLowerCase().includes('quota')) {
       return "The AI is currently at capacity (rate limit). Try switching provider/model, or wait a bit and retry.";
+    }
+
+    if ((error.status === 402) || isTokenBudgetErrorMessage(msg)) {
+      return "Generation exceeded your current token/credit budget. Reduce generation size or lower max output tokens.";
     }
 
     if (msg.toLowerCase().includes('no ai providers')) {
@@ -207,23 +318,69 @@ export const aiService = {
   async generateAssessment(topic: string, onRetry?: (attempt: number, delay: number) => void): Promise<AssessmentQuestion[]> {
     return withClientRetry(async () => {
       return await postApi<AssessmentQuestion[]>('/api/generate/assessment', { topic });
-    }, 6, 4000, onRetry);
+    }, RETRY_PROFILE.assessment.retries, RETRY_PROFILE.assessment.delayMs, onRetry, RETRY_PROFILE.assessment.maxDelayMs);
   },
 
-  async generateCourseOutline(topic: string, answers: Record<string, string>, onRetry?: (attempt: number, delay: number) => void): Promise<Course> {
+  async generateCourseOutline(
+    topic: string,
+    answers: Record<string, string>,
+    optionsOrRetry?: { forceFresh?: boolean; requireAi?: boolean } | ((attempt: number, delay: number) => void),
+    maybeOnRetry?: (attempt: number, delay: number) => void
+  ): Promise<Course> {
+    const options = typeof optionsOrRetry === 'function' ? {} : (optionsOrRetry || {});
+    const onRetry = typeof optionsOrRetry === 'function' ? optionsOrRetry : maybeOnRetry;
     return withClientRetry(async () => {
-      return await postApi<Course>('/api/generate/course-outline', { topic, answers });
-    }, 6, 4000, onRetry);
+      const envelope = await postApiEnvelope<Course>('/api/generate/course-outline', {
+        topic,
+        answers,
+        forceFresh: options.forceFresh ? Date.now() : '',
+      });
+      const warning = String(envelope.warning || '').toLowerCase();
+      const isFallbackWarning =
+        warning.includes('fallback') ||
+        warning.includes('unavailable') ||
+        warning.includes('budget');
+      const isTransientRateWarning =
+        warning.includes('rate-limited') ||
+        warning.includes('rate limit') ||
+        warning.includes('temporarily');
+      if (options.requireAi && isFallbackWarning && !isTransientRateWarning) {
+        const err: any = new Error('AI provider is currently unavailable for outline planning. Retry in a moment or switch provider/model.');
+        err.status = 503;
+        throw err;
+      }
+      return envelope.data;
+    }, RETRY_PROFILE.outline.retries, RETRY_PROFILE.outline.delayMs, onRetry, RETRY_PROFILE.outline.maxDelayMs);
   },
 
-  async generateModuleLessonPlan(courseTitle: string, moduleTitle: string, moduleDesc: string, onRetry?: (attempt: number, delay: number) => void): Promise<{ id: string, title: string, type: ContentType }[]> {
+  async generateModuleLessonPlan(
+    courseTitle: string,
+    moduleTitle: string,
+    moduleDesc: string,
+    optionsOrRetry?: { forceFresh?: boolean; requireAi?: boolean } | ((attempt: number, delay: number) => void),
+    maybeOnRetry?: (attempt: number, delay: number) => void
+  ): Promise<{ id: string, title: string, type: ContentType }[]> {
+    const options = typeof optionsOrRetry === 'function' ? {} : (optionsOrRetry || {});
+    const onRetry = typeof optionsOrRetry === 'function' ? optionsOrRetry : maybeOnRetry;
     return withClientRetry(async () => {
-      return await postApi<{ id: string, title: string, type: ContentType }[]>('/api/generate/module-lesson-plan', {
+      const envelope = await postApiEnvelope<{ id: string, title: string, type: ContentType }[]>('/api/generate/module-lesson-plan', {
         courseTitle,
         moduleTitle,
-        moduleDesc
+        moduleDesc,
+        forceFresh: options.forceFresh ? Date.now() : '',
       });
-    }, 6, 4000, onRetry);
+      const warning = String(envelope.warning || '').toLowerCase();
+      const isFallbackWarning =
+        warning.includes('fallback') ||
+        warning.includes('unavailable') ||
+        warning.includes('budget');
+      if (options.requireAi && isFallbackWarning) {
+        const err: any = new Error('AI provider is currently unavailable for outline edits. Retry in a moment or switch provider/model.');
+        err.status = 503;
+        throw err;
+      }
+      return envelope.data;
+    }, 4, RETRY_PROFILE.standard.delayMs, onRetry, 12000);
   },
 
   async generateStepContent(
@@ -231,33 +388,46 @@ export const aiService = {
     moduleTitle: string,
     stepTitle: string,
     type: ContentType,
-    optionsOrRetry?: { referenceContext?: string } | ((attempt: number, delay: number) => void),
+    optionsOrRetry?: { referenceContext?: string; forceFresh?: boolean } | ((attempt: number, delay: number) => void),
     maybeOnRetry?: (attempt: number, delay: number) => void
   ): Promise<ModuleContent> {
     const options = typeof optionsOrRetry === 'function' ? {} : (optionsOrRetry || {});
     const onRetry = typeof optionsOrRetry === 'function' ? optionsOrRetry : maybeOnRetry;
 
     return withClientRetry(async () => {
-      return await postApi<ModuleContent>('/api/generate/step-content', {
+      const envelope = await postApiEnvelope<ModuleContent>('/api/generate/step-content', {
         courseTitle,
         moduleTitle,
         stepTitle,
         type,
         referenceContext: options.referenceContext || '',
+        forceFresh: options.forceFresh ? Date.now() : '',
       });
-    }, 6, 4000, onRetry);
+      const warning = String(envelope.warning || '').toLowerCase();
+      const isFallbackWarning =
+        warning.includes('fallback') ||
+        warning.includes('unavailable') ||
+        warning.includes('budget');
+      const data: any = envelope.data || {};
+      if (isFallbackWarning || data?.data?.generationFallback === true) {
+        const err: any = new Error('AI content generation failed. Local fallback content is disabled for this build.');
+        err.status = 503;
+        throw err;
+      }
+      return envelope.data;
+    }, RETRY_PROFILE.fastGeneration.retries, RETRY_PROFILE.fastGeneration.delayMs, onRetry, RETRY_PROFILE.fastGeneration.maxDelayMs);
   },
 
   async askAboutContent(currentContent: ModuleContent, question: string, onRetry?: (attempt: number, delay: number) => void): Promise<string> {
     return withClientRetry(async () => {
       return await postApi<string>('/api/tutor/ask', { content: currentContent, question });
-    }, 4, 3000, onRetry);
+    }, RETRY_PROFILE.tutor.retries, RETRY_PROFILE.tutor.delayMs, onRetry, RETRY_PROFILE.tutor.maxDelayMs);
   },
 
   async editStepContent(currentContent: ModuleContent, editPrompt: string, onRetry?: (attempt: number, delay: number) => void): Promise<ModuleContent> {
     return withClientRetry(async () => {
       return await postApi<ModuleContent>('/api/tutor/edit', { content: currentContent, editPrompt });
-    }, 4, 3000, onRetry);
+    }, RETRY_PROFILE.tutor.retries, RETRY_PROFILE.tutor.delayMs, onRetry, RETRY_PROFILE.tutor.maxDelayMs);
   },
 
   async upsertProfile(profile: Partial<UserProfile>): Promise<UserProfile> {
@@ -280,6 +450,29 @@ export const aiService = {
   async getProfile(): Promise<UserProfile | null> {
     try {
       const r = await fetchJsonWithTimeout(`/api/profile/me?accountId=${encodeURIComponent(getAccountId())}`, { method: 'GET' }, 12000);
+      if (!r.ok) return null;
+      return r.json?.data || null;
+    } catch {
+      return null;
+    }
+  },
+
+  async analyzeCv(input: {
+    fileName: string;
+    mimeType: string;
+    declaredFormat: CvDeclaredFormat;
+    text: string;
+  }): Promise<CvAnalysisResult> {
+    return await postApi<CvAnalysisResult>('/api/profile/cv/analyze', input);
+  },
+
+  async upsertCvProfile(cv: CvAnalysisResult): Promise<CvAnalysisResult> {
+    return await postApi<CvAnalysisResult>('/api/profile/cv/upsert', { cv });
+  },
+
+  async getCvProfile(): Promise<CvAnalysisResult | null> {
+    try {
+      const r = await fetchJsonWithTimeout(`/api/profile/cv?accountId=${encodeURIComponent(getAccountId())}`, { method: 'GET' }, 12000);
       if (!r.ok) return null;
       return r.json?.data || null;
     } catch {
@@ -326,18 +519,29 @@ export const aiService = {
     return r.json.data as ImpactMetrics;
   },
 
-  async publishCourse(course: Course, visibility: 'private' | 'public') {
-    return await postApi<{ id: string; visibility: string; moderationStatus: string }>(
-      `/api/courses/${encodeURIComponent(course.title || 'course')}/publish`,
-      { course, visibility }
+  async listLearningCourses(): Promise<LearningCourseSummary[]> {
+    const r = await fetchJsonWithTimeout(
+      `/api/impact/courses?accountId=${encodeURIComponent(getAccountId())}`,
+      { method: 'GET' },
+      12000
+    );
+    if (!r.ok || !Array.isArray(r.json?.data)) return [];
+    return r.json.data as LearningCourseSummary[];
+  },
+
+  async publishCourse(course: Course, visibility: 'private' | 'public', courseIdHint = '') {
+    const routeKey = String(courseIdHint || course.title || 'course');
+    return await postApi<{ id: string; visibility: string; moderationStatus: string; courseId?: string }>(
+      `/api/courses/${encodeURIComponent(routeKey)}/publish`,
+      { course, visibility, courseId: courseIdHint || '' }
     );
   },
 
   async setCourseVisibility(post: PublicCoursePost, visibility: 'private' | 'public') {
     const snapshot = post.snapshot || { title: post.courseId, description: post.description || '', modules: [] };
-    return await postApi<{ id: string; visibility: string; moderationStatus: string }>(
+    return await postApi<{ id: string; visibility: string; moderationStatus: string; courseId?: string }>(
       `/api/courses/${encodeURIComponent(post.courseId || 'course')}/publish`,
-      { course: snapshot, visibility }
+      { course: snapshot, visibility, courseId: post.courseId || '' }
     );
   },
 
@@ -348,9 +552,24 @@ export const aiService = {
   },
 
   async getPublicFeed(): Promise<PublicCoursePost[]> {
-    const r = await fetchJsonWithTimeout('/api/public/feed', { method: 'GET' }, 12000);
+    const r = await fetchJsonWithTimeout(
+      `/api/public/feed?accountId=${encodeURIComponent(getAccountId())}`,
+      { method: 'GET' },
+      12000
+    );
     if (!r.ok) return [];
     return Array.isArray(r.json?.data) ? r.json.data : [];
+  },
+
+  async getPublicCourse(courseId: string): Promise<PublicCoursePost | null> {
+    if (!courseId) return null;
+    const r = await fetchJsonWithTimeout(
+      `/api/public/course/${encodeURIComponent(courseId)}?accountId=${encodeURIComponent(getAccountId())}`,
+      { method: 'GET' },
+      12000
+    );
+    if (!r.ok || !r.json?.data) return null;
+    return r.json.data as PublicCoursePost;
   },
 
   async getPublicComments(postId: string): Promise<Array<{ id: string; accountId: string; text: string; createdAt: string }>> {
@@ -359,12 +578,191 @@ export const aiService = {
     return r.json.data;
   },
 
-  async reactToPublic(postId: string, reaction = 'like'): Promise<void> {
-    await postApi(`/api/public/${encodeURIComponent(postId)}/react`, { reaction });
+  async getPublicCreatorProfile(creatorId: string): Promise<PublicCreatorProfile | null> {
+    if (!creatorId) return null;
+    const r = await fetchJsonWithTimeout(
+      `/api/public/creator/${encodeURIComponent(creatorId)}?viewerId=${encodeURIComponent(getAccountId())}`,
+      { method: 'GET' },
+      12000
+    );
+    if (!r.ok || !r.json?.data) return null;
+    return r.json.data as PublicCreatorProfile;
   },
 
-  async commentOnPublic(postId: string, comment: string): Promise<void> {
-    await postApi(`/api/public/${encodeURIComponent(postId)}/comment`, { comment });
+  async setCreatorFollow(creatorId: string, follow: boolean): Promise<{ following: boolean; followers: number; followingCount: number }> {
+    return await postApi(`/api/public/creator/${encodeURIComponent(creatorId)}/follow`, { follow: !!follow });
+  },
+
+  async reactToPublic(
+    postId: string,
+    reaction: 'up' | 'down' | 'like' = 'up'
+  ): Promise<{ upvotes: number; downvotes: number; userReaction: 'up' | 'down' | null }> {
+    return await postApi(`/api/public/${encodeURIComponent(postId)}/react`, { reaction });
+  },
+
+  async commentOnPublic(postId: string, comment: string): Promise<{ duplicate?: boolean }> {
+    return await postApi(`/api/public/${encodeURIComponent(postId)}/comment`, { comment });
+  },
+
+  async savePublicCourse(postId: string): Promise<{ saves: number; alreadySaved?: boolean }> {
+    return await postApi(`/api/public/${encodeURIComponent(postId)}/save`, {});
+  },
+
+  async getCourseAnalytics(courseId: string): Promise<CourseAnalyticsSummary> {
+    const accountId = getAccountId();
+    const r = await fetchJsonWithTimeout(
+      `/api/courses/${encodeURIComponent(courseId)}/analytics?accountId=${encodeURIComponent(accountId)}`,
+      { method: 'GET' },
+      12000
+    );
+    if (r.ok && r.json?.data) {
+      return r.json.data as CourseAnalyticsSummary;
+    }
+    if (r.status === 405) {
+      const retry = await fetchJsonWithTimeout(
+        `/api/courses/analytics?courseId=${encodeURIComponent(courseId)}&accountId=${encodeURIComponent(accountId)}`,
+        { method: 'GET' },
+        12000
+      );
+      if (retry.ok && retry.json?.data) return retry.json.data as CourseAnalyticsSummary;
+      const retryErr = retry.json?.error || retry.text || 'Failed to load course analytics.';
+      throw new Error(retryErr);
+    }
+    const errMsg = r.json?.error || r.text || 'Failed to load course analytics.';
+    throw new Error(errMsg);
+  },
+
+  async getInterviewRecommendedJobs(payload: {
+    profile: {
+      fullName?: string;
+      headline?: string;
+      summary?: string;
+      skills?: string[];
+      experience?: Array<{ role?: string; organization?: string; highlights?: string[] }>;
+      education?: Array<{ program?: string; institution?: string }>;
+      certifications?: string[];
+      learningGoal?: string;
+      region?: string;
+      preferredLanguage?: string;
+    };
+  }): Promise<InterviewRecommendedJob[]> {
+    return withClientRetry(async () => {
+      const rows = await postApi<InterviewRecommendedJob[]>('/api/interview/recommendations', payload || {});
+      return Array.isArray(rows) ? rows : [];
+    }, RETRY_PROFILE.fastGeneration.retries, RETRY_PROFILE.fastGeneration.delayMs, undefined, RETRY_PROFILE.fastGeneration.maxDelayMs);
+  },
+
+  async generateInterviewSession(payload: {
+    jobTitle: string;
+    profile: {
+      fullName?: string;
+      headline?: string;
+      summary?: string;
+      skills?: string[];
+      experience?: Array<{ role?: string; organization?: string; highlights?: string[] }>;
+      education?: Array<{ program?: string; institution?: string }>;
+      certifications?: string[];
+      learningGoal?: string;
+      region?: string;
+      preferredLanguage?: string;
+    };
+    setup?: {
+      targetLanguage?: string;
+      questionFocus?: 'mixed' | 'behavioral' | 'technical';
+      seniority?: 'entry' | 'mid' | 'senior';
+    };
+  }): Promise<InterviewSession> {
+    return withClientRetry(async () => {
+      return await postApi<InterviewSession>('/api/interview/session', payload || {});
+    }, RETRY_PROFILE.interviewSession.retries, RETRY_PROFILE.interviewSession.delayMs, undefined, RETRY_PROFILE.interviewSession.maxDelayMs);
+  },
+
+  async transcribeInterviewAudio(payload: {
+    audioBase64: string;
+    mimeType?: string;
+    language?: string;
+  }): Promise<string> {
+    const routes = [
+      '/api/interview/transcribe',
+      '/api/interview/transcription',
+      '/api/interview/transcribe-audio',
+      '/api/interview/audio-transcribe',
+      '/api/interview/transcribeAudio',
+      '/api/interview/audioTranscribe',
+      '/api/interview/transcribe/',
+    ];
+    let lastErr: any = null;
+    const attempts: Array<{ route: string; status: number; message: string }> = [];
+    let allMissingRoute = true;
+    for (const route of routes) {
+      try {
+        const transcript = await withClientRetry(async () => {
+          const data = await postApi<{ transcript: string }>(route, payload || {});
+          return String(data?.transcript || '').trim();
+        }, RETRY_PROFILE.fastGeneration.retries, RETRY_PROFILE.fastGeneration.delayMs, undefined, RETRY_PROFILE.fastGeneration.maxDelayMs);
+        if (transcript) return transcript;
+      } catch (e: any) {
+        lastErr = e;
+        const msg = String(e?.message || '').toLowerCase();
+        const isMissingRoute = e?.status === 404 || msg.includes('unknown endpoint') || msg.includes('not found');
+        attempts.push({
+          route,
+          status: Number(e?.status || 0),
+          message: String(e?.message || 'Request failed'),
+        });
+        if (!isMissingRoute) allMissingRoute = false;
+        if (!isMissingRoute) break;
+      }
+    }
+    if (allMissingRoute) {
+      const detail = attempts.map((row) => `${row.route} -> ${row.status || 0}`).join(', ');
+      throw new Error(`Voice transcription API route is missing on the running backend. Tried: ${detail}. Ensure the latest API server is running (use npm run dev or npm run dev:local).`);
+    }
+    throw lastErr || new Error('Voice transcription endpoint is unavailable.');
+  },
+
+  async evaluateInterviewAnswer(payload: {
+    role: {
+      jobTitle: string;
+      roleSummary: string;
+      responsibilities: string[];
+      requirements: string[];
+    };
+    questionId: string;
+    question: string;
+    answer: string;
+    answerMode: 'text' | 'voice';
+    voiceMeta?: {
+      confidence?: number;
+      fillerCount?: number;
+      wordCount?: number;
+    };
+    targetLanguage?: string;
+  }): Promise<InterviewAnswerFeedback> {
+    return withClientRetry(async () => {
+      return await postApi<InterviewAnswerFeedback>('/api/interview/feedback', payload || {});
+    }, RETRY_PROFILE.tutor.retries, RETRY_PROFILE.tutor.delayMs, undefined, RETRY_PROFILE.tutor.maxDelayMs);
+  },
+
+  async finalizeInterviewReview(payload: {
+    role: {
+      jobTitle: string;
+      roleSummary: string;
+      responsibilities: string[];
+      requirements: string[];
+    };
+    targetLanguage?: string;
+    items: Array<{
+      questionId: string;
+      question: string;
+      answer: string;
+      feedback?: string;
+      sampleResponse?: string;
+    }>;
+  }): Promise<InterviewFinalReview> {
+    return withClientRetry(async () => {
+      return await postApi<InterviewFinalReview>('/api/interview/final-review', payload || {});
+    }, RETRY_PROFILE.standard.retries, RETRY_PROFILE.standard.delayMs, undefined, RETRY_PROFILE.standard.maxDelayMs);
   },
 
   async reportCourse(courseId: string, reason: string): Promise<void> {

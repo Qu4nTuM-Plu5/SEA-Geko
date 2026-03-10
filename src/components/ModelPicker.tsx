@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 
-export type ProviderId = "auto" | "gemini" | "openai" | "anthropic" | "openrouter";
+export type ProviderId = "auto" | "openrouter" | "mistral" | "ollama" | "gemini" | "openai" | "anthropic";
 
 type ProviderConfig = {
   id: Exclude<ProviderId, "auto">;
@@ -20,12 +20,14 @@ function prettyProvider(p: ProviderId | string) {
   if (v === "openai") return "OpenAI";
   if (v === "anthropic") return "Claude";
   if (v === "openrouter") return "OpenRouter";
+  if (v === "mistral") return "Mistral";
+  if (v === "ollama") return "Ollama";
   return "Auto";
 }
 
 function clampProvider(p?: string): ProviderId {
   const v = String(p || "auto").toLowerCase();
-  if (v === "gemini" || v === "openai" || v === "anthropic" || v === "openrouter") return v;
+  if (v === "openrouter" || v === "mistral" || v === "ollama" || v === "gemini" || v === "openai" || v === "anthropic") return v;
   return "auto";
 }
 
@@ -83,11 +85,12 @@ export function ModelPicker(props: {
       const el = rootRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      const menuHeight = 420;
+      const topSafeOffset = 92;
+      const menuHeight = Math.min(360, Math.max(260, window.innerHeight - topSafeOffset - 40));
       const menuWidth = Math.min(380, Math.max(260, window.innerWidth - 24));
 
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const spaceAbove = rect.top;
+      const spaceBelow = window.innerHeight - rect.bottom - 12;
+      const spaceAbove = rect.top - topSafeOffset;
       const vertical = spaceBelow < menuHeight && spaceAbove > spaceBelow ? "up" : "down";
 
       // right: align panel right edge to trigger right edge. left: align panel left edge to trigger left edge.
@@ -112,10 +115,8 @@ export function ModelPicker(props: {
   const providers: ProviderConfig[] = useMemo(() => {
     if (cfg?.providers?.length) return cfg.providers;
     return [
-      { id: "openai", available: true, defaultModels: ["gpt-4o-mini"] },
-      { id: "anthropic", available: true, defaultModels: ["claude-3-5-sonnet-latest"] },
-      { id: "gemini", available: true, defaultModels: ["gemini-1.5-flash", "gemini-1.5-pro"] },
-      { id: "openrouter", available: true, defaultModels: ["openai/gpt-4o-mini"] },
+      { id: "openrouter", available: true, defaultModels: ["openai/gpt-4o-mini", "google/gemini-2.0-flash-001", "deepseek/deepseek-chat"] },
+      { id: "ollama", available: true, defaultModels: ["llama3.2:3b"] },
     ];
   }, [cfg]);
 
@@ -125,6 +126,7 @@ export function ModelPicker(props: {
   const flattened = useMemo(() => {
     const rows: Array<{ provider: ProviderConfig["id"]; model: string; available: boolean }> = [];
     for (const p of providers) {
+      if (!p.available) continue;
       for (const m of p.defaultModels || []) {
         rows.push({ provider: p.id, model: m, available: !!p.available });
       }
@@ -159,7 +161,7 @@ export function ModelPicker(props: {
 
       {open ? (
         <div
-          className={`absolute z-50 w-[380px] max-w-[94vw] rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden ${
+          className={`absolute z-[120] w-[360px] max-w-[92vw] rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden ${
             placement.vertical === "down" ? "top-full mt-2 origin-top" : "bottom-full mb-2 origin-bottom"
           } ${placement.horizontal === "right" ? "right-0" : "left-0"}`}
         >
@@ -176,7 +178,7 @@ export function ModelPicker(props: {
             ) : null}
           </div>
 
-          <div className="max-h-[360px] overflow-auto p-2">
+          <div className="max-h-[300px] md:max-h-[320px] overflow-auto p-2">
             <button
               type="button"
               onClick={() => {

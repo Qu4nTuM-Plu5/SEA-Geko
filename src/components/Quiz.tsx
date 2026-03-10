@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Check, X, Trophy, ChevronDown, SlidersHorizontal, Lightbulb, ArrowLeft, ArrowRight, RotateCcw } from 'lucide-react';
+import { Check, X, Trophy, ChevronDown, Lightbulb, ArrowLeft, ArrowRight, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 
@@ -203,10 +203,10 @@ export const Quiz: React.FC<QuizProps> = ({ questions, topicLabel, onComplete })
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center gap-3">
         <Trophy className="w-5 h-5 text-emerald-600" />
-        <div className="flex-1 h-5 rounded-full border border-slate-300 bg-slate-100 overflow-hidden">
+        <div className="flex-1 h-4 rounded-full border border-slate-300 bg-slate-100 overflow-hidden">
           <motion.div
             className="h-full bg-emerald-500"
             initial={{ width: 0 }}
@@ -219,12 +219,12 @@ export const Quiz: React.FC<QuizProps> = ({ questions, topicLabel, onComplete })
         </div>
       </div>
 
-      <div className="rounded-[24px] border border-slate-200 bg-white p-6 md:p-8 space-y-6 shadow-sm">
-        <div className="flex items-start justify-between gap-4">
+      <div className="rounded-[24px] border border-slate-200 bg-white p-5 md:p-6 space-y-5 shadow-sm">
+        <div className="flex items-start gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="h-12 w-2 rounded-full bg-violet-600" />
+            <div className="h-10 w-2 rounded-full bg-violet-600" />
             <div className="flex items-center gap-2 min-w-0">
-              <h3 className="text-2xl font-bold text-slate-900 whitespace-nowrap">Question {currentIdx + 1}</h3>
+              <h3 className="text-xl font-bold text-slate-900 whitespace-nowrap">Question {currentIdx + 1}</h3>
               <ChevronDown className="w-4 h-4 text-slate-400" />
               {topicLabel ? (
                 <span className="hidden md:inline-flex items-center px-3 py-1 rounded-lg border border-orange-200 text-orange-500 bg-orange-50 text-sm truncate max-w-[360px]">
@@ -233,20 +233,13 @@ export const Quiz: React.FC<QuizProps> = ({ questions, topicLabel, onComplete })
               ) : null}
             </div>
           </div>
-          <button
-            type="button"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 transition-colors"
-          >
-            <SlidersHorizontal className="w-4 h-4" />
-            Quiz Settings
-          </button>
         </div>
 
-        <h4 className="text-2xl md:text-[2rem] font-medium text-slate-900 leading-relaxed">
+        <h4 className="text-xl md:text-[1.75rem] font-medium text-slate-900 leading-snug">
           {current.question}
         </h4>
 
-        <div className="space-y-4">
+        <div className="space-y-3">
           <AnimatePresence mode="popLayout">
             {current.options.map((option, idx) => {
               const isCorrect = idx === current.correctAnswer;
@@ -258,7 +251,7 @@ export const Quiz: React.FC<QuizProps> = ({ questions, topicLabel, onComplete })
                   layout
                   onClick={() => handleSelectOption(idx)}
                   className={cn(
-                    "w-full rounded-2xl p-5 border text-left transition-colors flex items-center justify-between",
+                    "w-full rounded-2xl p-4 border text-left transition-colors flex items-center justify-between",
                     !isSubmitted && "bg-slate-100 border-slate-200 hover:bg-slate-50",
                     isSubmitted && isCorrect && "bg-emerald-100 border-emerald-400 text-emerald-900",
                     isSubmitted && isSelected && !isCorrect && "bg-red-50 border-red-300 text-red-900",
@@ -266,10 +259,10 @@ export const Quiz: React.FC<QuizProps> = ({ questions, topicLabel, onComplete })
                   )}
                 >
                   <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-slate-200 text-slate-800 flex items-center justify-center text-2xl font-normal">
+                    <div className="w-9 h-9 rounded-full bg-slate-200 text-slate-800 flex items-center justify-center text-xl font-normal">
                       {String.fromCharCode(65 + idx)}
                     </div>
-                    <span className="text-base md:text-lg text-current">{option}</span>
+                    <span className="text-[15px] md:text-base text-current">{option}</span>
                   </div>
                   {isSubmitted && isCorrect ? <Check className="w-6 h-6 text-emerald-600" /> : null}
                   {isSubmitted && isSelected && !isCorrect ? <X className="w-6 h-6 text-red-500" /> : null}
@@ -284,7 +277,7 @@ export const Quiz: React.FC<QuizProps> = ({ questions, topicLabel, onComplete })
             type="button"
             onClick={toggleInfo}
             className={cn(
-              "w-full rounded-xl border px-5 py-3 text-lg flex items-center justify-center gap-2 transition-colors",
+              "w-full rounded-xl border px-4 py-2.5 text-base flex items-center justify-center gap-2 transition-colors",
               isSubmitted
                 ? "border-amber-300 text-amber-600 hover:bg-amber-50"
                 : "border-blue-300 text-blue-600 hover:bg-blue-50"
@@ -301,20 +294,20 @@ export const Quiz: React.FC<QuizProps> = ({ questions, topicLabel, onComplete })
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 8 }}
                 className={cn(
-                  "rounded-2xl p-6 border",
+                  "rounded-2xl p-4 border",
                   isSubmitted ? "bg-amber-50 border-amber-200 text-amber-900" : "bg-blue-50 border-blue-200 text-slate-800"
                 )}
               >
                 <div className="flex items-start gap-3">
                   <div className={cn(
-                    "w-10 h-10 rounded-full flex items-center justify-center",
+                    "w-9 h-9 rounded-full flex items-center justify-center",
                     isSubmitted ? "bg-amber-100 text-amber-600" : "bg-blue-100 text-blue-600"
                   )}>
                     <Lightbulb className="w-5 h-5" />
                   </div>
                   <div className="space-y-1">
-                    <p className="text-xl font-semibold">{isSubmitted ? "Explanation" : "Hint"}</p>
-                    <p className="text-lg leading-relaxed">{current.explanation}</p>
+                    <p className="text-lg font-semibold">{isSubmitted ? "Explanation" : "Hint"}</p>
+                    <p className="text-base leading-relaxed">{current.explanation}</p>
                   </div>
                 </div>
               </motion.div>
@@ -322,12 +315,12 @@ export const Quiz: React.FC<QuizProps> = ({ questions, topicLabel, onComplete })
           </AnimatePresence>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-[auto_1fr_auto] gap-3 items-center pt-1">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center pt-1">
           <button
             type="button"
             onClick={handlePrevious}
             disabled={currentIdx === 0}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-5 py-3 text-sm text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors"
+            className="w-full md:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-5 py-3 text-sm text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
             Previous
@@ -335,17 +328,10 @@ export const Quiz: React.FC<QuizProps> = ({ questions, topicLabel, onComplete })
 
           <button
             type="button"
-            className="h-full rounded-xl border border-slate-200 bg-slate-100 text-slate-400 px-4 py-3 text-left"
-          >
-            Ask AI for help...
-          </button>
-
-          <button
-            type="button"
             onClick={handleNext}
             disabled={!isSubmitted}
             className={cn(
-              "inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition-colors border",
+              "w-full md:w-auto md:justify-self-end inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition-colors border",
               isSubmitted
                 ? "bg-violet-500 border-violet-500 text-white hover:bg-violet-600"
                 : "bg-white border-slate-300 text-slate-400 cursor-not-allowed"
