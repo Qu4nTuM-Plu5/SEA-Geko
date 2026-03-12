@@ -1,4 +1,4 @@
-# SEA-Geko (Nexus AI)
+# SEA-Geko
 
 AI-powered learning continuity prototype for low-connectivity environments.
 
