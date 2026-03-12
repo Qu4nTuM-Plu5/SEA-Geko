@@ -10521,7 +10521,7 @@ export default function App() {
               </div>
               <p className="mt-2 text-sm text-slate-500">
                 {authEnabled
-                  ? 'Use Supabase auth to sync your data across devices.'
+                  ? ''
                   : 'Supabase auth is not enabled. Add Supabase keys in .env first.'}
               </p>
 
