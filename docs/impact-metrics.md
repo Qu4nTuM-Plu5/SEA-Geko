@@ -26,7 +26,4 @@
 - Includes KPI cards in-app.
 - Uses a basic D7 proxy and default timing fallback if full timestamps are unavailable.
 
-## Judge Evidence Checklist
-- Screenshot KPI cards after completing at least one full course.
-- Show pre/post entries and event timeline.
-- Filter by segment/language/course in query examples where available.
+
