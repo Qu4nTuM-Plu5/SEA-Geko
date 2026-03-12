@@ -61,6 +61,7 @@ export interface LessonStep {
   title: string;
   type: ContentType;
   content?: ModuleContent;
+  errorMessage?: string;
   status: 'pending' | 'generating' | 'completed' | 'loading' | 'error';
   isCompleted?: boolean;
   moduleNumber?: number;
@@ -97,6 +98,20 @@ export interface InterviewRecommendedJob {
   id: string;
   title: string;
   reason: string;
+}
+
+export interface CareerGuidanceSource {
+  label: string;
+  url: string;
+}
+
+export interface CareerGuidanceRole {
+  id: string;
+  title: string;
+  roleSummary: string;
+  responsibilities: string[];
+  requirements: string[];
+  sources: CareerGuidanceSource[];
 }
 
 export interface InterviewRoleBlueprint {
@@ -316,7 +331,7 @@ export interface AbuseReport {
 }
 
 export type RouterConfig = {
-  mode: 'auto' | 'manual';
+  mode: 'auto' | 'auto_fast' | 'auto_thinking' | 'manual';
   provider: 'auto' | 'openrouter' | 'mistral' | 'ollama' | 'gemini' | 'openai' | 'anthropic';
   model: string; // 'auto' or provider model id
   // Optional, mostly for Gemini rotation

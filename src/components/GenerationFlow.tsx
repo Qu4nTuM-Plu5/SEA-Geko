@@ -57,8 +57,11 @@ const renderStepLabel = (moduleIndex: number, step: Module['steps'][number], fal
 
 const groupModuleStepsByLesson = (module: Module) => {
   const groups = new Map<number, { lessonNumber: number; lessonTitle: string; steps: Module['steps'] }>();
-  for (const step of module.steps) {
-    const lessonNumber = typeof step.lessonNumber === 'number' ? step.lessonNumber : 1;
+  const fallbackChunkSize = 7;
+  for (const [idx, step] of module.steps.entries()) {
+    const lessonNumber = typeof step.lessonNumber === 'number' && step.lessonNumber > 0
+      ? step.lessonNumber
+      : Math.floor(idx / fallbackChunkSize) + 1;
     const fallbackTitle = stripStructuredStepPrefix(step.lessonTitle || step.title || `Lesson ${lessonNumber}`);
     const lessonTitle = fallbackTitle || `Lesson ${lessonNumber}`;
     const existing = groups.get(lessonNumber);
@@ -113,9 +116,9 @@ const StageNode: React.FC<{ label: string; done?: boolean; active?: boolean; dan
 export const GenerationFlow: React.FC<GenerationFlowProps> = ({
   course,
   onComplete,
-  onUseSample,
+  onUseSample: _onUseSample,
   onRetryModule,
-  retryInfo,
+  retryInfo: _retryInfo,
   phase = 'content',
   locale = 'en',
 }) => {
@@ -714,52 +717,6 @@ export const GenerationFlow: React.FC<GenerationFlowProps> = ({
             </div>
           </div>
         </div>
-
-        <AnimatePresence>
-          {retryInfo && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="max-w-md mx-auto bg-white border-2 border-orange-200 p-8 rounded-[32px] text-center shadow-2xl shadow-orange-500/10 relative overflow-hidden"
-            >
-              <div className="absolute top-0 left-0 w-full h-1 bg-orange-100">
-                <motion.div
-                  initial={{ width: '0%' }}
-                  animate={{ width: '100%' }}
-                  transition={{ duration: retryInfo.delay / 1000, ease: 'linear' }}
-                  className="h-full bg-orange-500"
-                />
-              </div>
-
-              <div className="flex flex-col items-center gap-4">
-                <div className="w-14 h-14 bg-orange-100 rounded-full flex items-center justify-center text-orange-600">
-                  <RotateCcw className="w-7 h-7 animate-spin" />
-                </div>
-                <h3 className="text-lg font-bold text-slate-900">Rate Limit Encountered</h3>
-                <p className="text-slate-500 text-sm leading-relaxed">
-                  {t('autoResumingIn', locale)} <span className="font-bold text-orange-600">{Math.round(retryInfo.delay / 1000)}s</span>.
-                </p>
-                <div className="px-4 py-2 bg-slate-50 rounded-full text-[10px] font-mono text-slate-400 uppercase tracking-widest font-bold">
-                  {t('attemptLabel', locale)} {11 - retryInfo.attempt} / 10
-                </div>
-                <button
-                  onClick={onComplete}
-                  className="text-slate-400 hover:text-slate-600 text-xs font-medium transition-colors underline underline-offset-4"
-                >
-                  {t('skipAndViewPartialCourse', locale)}
-                </button>
-                <button
-                  onClick={onUseSample}
-                  className="flex items-center justify-center gap-2 px-6 py-3 bg-white border border-slate-200 hover:border-emerald-500 hover:text-emerald-600 text-slate-600 rounded-2xl transition-all text-xs font-bold shadow-sm"
-                >
-                  <BookOpen className="w-4 h-4" />
-                  {t('switchToSampleCourse', locale)}
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         <AnimatePresence>
           {allFinished && phase === 'content' && (

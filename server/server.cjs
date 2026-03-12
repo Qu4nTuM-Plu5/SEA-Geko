@@ -16,6 +16,7 @@
     ANTHROPIC_MODELS=claude-3-5-sonnet-latest,claude-3-5-haiku-latest
 
     MISTRAL_API_KEY=
+    MISTRAL_API_KEYS=key1,key2,key3
     MISTRAL_MODELS=mistral-small-latest,ministral-8b-latest
 
     OLLAMA_API_BASE=http://127.0.0.1:11434
@@ -45,8 +46,16 @@ try {
   };
   const dotenv = require('dotenv');
   dotenv.config({ path: path.join(__dirname, '..', '.env'), quiet: true });
-  // Prefer server/.env for backend runtime overrides during local development.
-  dotenv.config({ path: path.join(__dirname, '.env'), quiet: true, override: true });
+  // Apply server/.env overrides, but do not erase non-empty root values with blank strings.
+  const serverEnvPath = path.join(__dirname, '.env');
+  if (fs.existsSync(serverEnvPath)) {
+    const parsed = dotenv.parse(fs.readFileSync(serverEnvPath));
+    for (const [key, value] of Object.entries(parsed)) {
+      const next = String(value ?? '').trim();
+      if (!next) continue;
+      process.env[key] = next;
+    }
+  }
   // Keep runtime-provided ports (e.g. scripts/dev-local.cjs) from being overwritten by dotenv files.
   if (String(runtimeEnv.PORT || '').trim()) process.env.PORT = String(runtimeEnv.PORT);
   if (String(runtimeEnv.VITE_API_PORT || '').trim()) process.env.VITE_API_PORT = String(runtimeEnv.VITE_API_PORT);
@@ -65,7 +74,10 @@ let DISK_CACHE_ENABLED = true;
 const AI_STRICT_GENERATION = !/^(0|false|no|off)$/i.test(String(process.env.AI_STRICT_GENERATION || '1').trim());
 const AI_GENERATION_CACHE_ENABLED = /^(1|true|yes|on)$/i.test(String(process.env.AI_GENERATION_CACHE_ENABLED || '0').trim());
 const AI_DISABLE_LOCAL_FALLBACK_CONTENT = !/^(0|false|no|off)$/i.test(String(process.env.AI_DISABLE_LOCAL_FALLBACK_CONTENT || '1').trim());
-const INTERVIEW_GENERATION_DEBUG_ENABLED = /^(1|true|yes|on)$/i.test(String(process.env.INTERVIEW_GENERATION_DEBUG || '').trim());
+const INTERVIEW_GENERATION_DEBUG_ENABLED = (
+  /^(1|true|yes|on)$/i.test(String(process.env.INTERVIEW_GENERATION_DEBUG || '').trim())
+  && /^(1|true|yes|on)$/i.test(String(process.env.INTERVIEW_GENERATION_DEBUG_ALLOW || '').trim())
+);
 const MODULE_VIDEO_REGISTRY = new Map();
 const VIDEO_REGISTRY_TTL_MS = 12 * 60 * 60 * 1000;
 const SUPABASE_URL = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim().replace(/\/+$/, '');
@@ -306,6 +318,32 @@ function aiRequestPolicy(router = {}) {
   return { strictAi, noCache };
 }
 
+function isInterviewValidationFailure(errLike = null) {
+  const status = Number(errLike?.status || 0);
+  const lower = String(errLike?.message || '').toLowerCase();
+  if (status === 422) return true;
+  return (
+    lower.includes('failed validation')
+    || lower.includes('invalid interview response')
+    || lower.includes('localized interview output failed language gate')
+    || lower.includes('language gate')
+  );
+}
+
+function isModelUnavailableFailure(errLike = null) {
+  const status = Number(errLike?.status || 0);
+  const lower = String(errLike?.message || '').toLowerCase();
+  if (status === 404) return true;
+  return (
+    lower.includes('selected ai model is unavailable')
+    || lower.includes('model is unavailable')
+    || lower.includes('model unavailable')
+    || lower.includes('model not found')
+    || lower.includes('unknown model')
+    || lower.includes('not a valid model')
+  );
+}
+
 function classifyAiFailure(err, context = 'AI generation failed') {
   const statusRaw = Number(err?.status || 0);
   const status = Number.isFinite(statusRaw) && statusRaw > 0 ? statusRaw : 503;
@@ -340,6 +378,18 @@ function classifyAiFailure(err, context = 'AI generation failed') {
     return {
       status,
       error: 'AI provider rate limit reached. Retry shortly or switch provider/model.',
+    };
+  }
+  if (isInterviewValidationFailure(err)) {
+    return {
+      status: 503,
+      error: 'AI interview response failed validation. Retry or switch mode/provider.',
+    };
+  }
+  if (isTimeoutOrAbortMessage(lower) || status === 408 || status === 503 || status === 504) {
+    return {
+      status: 503,
+      error: 'AI provider timed out before completing interview generation. Retry or switch provider/model.',
     };
   }
 
@@ -1390,6 +1440,52 @@ function normalizePromptInput(value) {
   return normalizePromptDraft(value).trim();
 }
 
+function stripInterviewPromptScaffolding(value = '') {
+  let text = normalizePromptInput(value)
+    .replace(/^[`"']+|[`"']+$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  if (!text) return '';
+  const hadInterviewIntent = /\b(interview|questions?|questionnaire|guide|prep(?:aration)?|simulation)\b/i.test(text);
+  if (hadInterviewIntent) {
+    const afterFor = text.match(/\b(?:for|about|regarding|on)\s+(.+)$/i);
+    if (afterFor?.[1]) text = String(afterFor[1]).trim();
+    text = text
+      .replace(/^(?:an?\s+)?(?:interview\s+)?(?:questions?|questionnaire|guide|prep(?:aration)?|simulation)\s*(?:for|about|regarding|on)?\s*/i, '')
+      .replace(/^(?:generate|create|write|give|make|prepare|show|need|want)\s+/i, '')
+      .trim();
+  }
+  text = text
+    .replace(/^for\s+/i, '')
+    .replace(/\b(?:interview\s+questions?|questionnaire|interview\s+guide|interview\s+prep(?:aration)?|interview\s+simulation)\b$/i, '')
+    .replace(/^[\s:;,.-]+|[\s:;,.-]+$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  if (/^[a-z0-9][a-z0-9\s/-]*$/.test(text)) {
+    text = text
+      .split(/\s+/)
+      .map((word) => word ? (word.charAt(0).toUpperCase() + word.slice(1)) : word)
+      .join(' ');
+  }
+  return text.slice(0, 120);
+}
+
+function getInterviewInputSafetyError(value = '') {
+  const lower = String(value || '').toLowerCase();
+  if (!lower) return '';
+  const blockedPatterns = [
+    /\b(?:porn|porno|xxx|nsfw|nude|nudity|erotic|fetish|escort|brothel|onlyfans|sexual?|sex)\b/i,
+    /\b(?:hate\s*speech|white\s*power|heil\s*hitler|nazi\s*propaganda|ethnic\s*cleansing|genocide|terrorist\s*recruitment)\b/i,
+    /\b(?:kill\s+all|rape|slur)\b/i,
+  ];
+  for (const pattern of blockedPatterns) {
+    if (pattern.test(lower)) {
+      return 'Interview role contains disallowed sexual or hate content. Please enter a professional job title.';
+    }
+  }
+  return '';
+}
+
 function getTopicValidationError(value) {
   const prompt = normalizePromptInput(value);
   if (!prompt) return 'Enter a topic before generating.';
@@ -1580,49 +1676,75 @@ async function routeJsonWithRepair(router, prompt, keyBase, options = {}) {
   return null;
 }
 
+function lessonFlowTypes(programmingTrack) {
+  return programmingTrack
+    ? ['TEXT', 'LEARNING_CARD', 'FLIP_CARD', 'VIDEO', 'CODE_BUILDER', 'DRAG_FILL', 'QUIZ']
+    : ['TEXT', 'LEARNING_CARD', 'FLIP_CARD', 'VIDEO', 'POP_CARD', 'DRAG_FILL', 'QUIZ'];
+}
+
+function titleForLessonFlowStep(lessonTopic, type) {
+  if (type === 'TEXT') return `${lessonTopic}: Core Concepts`;
+  if (type === 'LEARNING_CARD') return `Learning Cards: ${lessonTopic} Essentials`;
+  if (type === 'FLIP_CARD') return `Flashcards: Key Terms in ${lessonTopic}`;
+  if (type === 'VIDEO') return `Video: ${lessonTopic} Walkthrough`;
+  if (type === 'CODE_BUILDER') return `Interactive Coding: ${lessonTopic}`;
+  if (type === 'ACCORDION') return `Concept Breakdown: ${lessonTopic}`;
+  if (type === 'POP_CARD') return `Pop Cards: ${lessonTopic} Insights`;
+  if (type === 'DRAG_FILL') return `Challenge: Apply ${lessonTopic}`;
+  if (type === 'QUIZ') return `Quiz: ${lessonTopic} Checkpoint`;
+  return `${lessonTopic}: ${type}`;
+}
+
 function normalizeLessonPlan(raw, topicContext = '') {
   const programmingTrack = isProgrammingTopic(topicContext);
-  const defaults = programmingTrack
-    ? [
-        { title: 'Introduction', type: 'TEXT' },
-        { title: 'Core Concepts', type: 'ACCORDION' },
-        { title: 'Flashcards', type: 'FLIP_CARD' },
-        { title: 'Deep Dive Video', type: 'VIDEO' },
-        { title: 'Practice Challenge', type: 'CODE_BUILDER' },
-        { title: 'Applied Challenge', type: 'DRAG_FILL' },
-        { title: 'Final Module Assessment', type: 'QUIZ' },
-      ]
-    : [
-        { title: 'Introduction', type: 'TEXT' },
-        { title: 'Core Concepts', type: 'ACCORDION' },
-        { title: 'Flashcards', type: 'FLIP_CARD' },
-        { title: 'Deep Dive Video', type: 'VIDEO' },
-        { title: 'Pop Cards', type: 'POP_CARD' },
-        { title: 'Applied Challenge', type: 'DRAG_FILL' },
-        { title: 'Final Module Assessment', type: 'QUIZ' },
-      ];
-
-  const arr = Array.isArray(raw) ? raw.slice(0, 28) : [];
-  if (!arr.length) {
-    return defaults.map((d, idx) => ({
-      id: `step-${idx + 1}`,
-      title: d.title,
-      type: d.type,
-    }));
+  const flow = lessonFlowTypes(programmingTrack);
+  const tokens = extractMeaningfulTokens(String(topicContext || ''), 5);
+  const lessonTopics = [
+    `${tokens[0] || 'Core'} Fundamentals`,
+    `${tokens[1] || tokens[0] || 'Practical'} Applications`,
+    `${tokens[2] || tokens[1] || tokens[0] || 'Advanced'} Mastery`,
+  ];
+  const defaults = [];
+  for (const lessonTopic of lessonTopics) {
+    for (const type of flow) {
+      defaults.push({
+        title: titleForLessonFlowStep(lessonTopic, type),
+        type,
+      });
+    }
   }
 
-  const canonicalTypes = new Set(['TEXT', 'VIDEO', 'FLIP_CARD', 'QUIZ', 'CODE_BUILDER', 'LEARNING_CARD', 'DRAG_FILL', 'ACCORDION', 'HOTSPOT', 'CAROUSEL', 'POP_CARD']);
+  const canonicalTypes = new Set([
+    'TEXT',
+    'VIDEO',
+    'FLIP_CARD',
+    'QUIZ',
+    'CODE_BUILDER',
+    'LEARNING_CARD',
+    'DRAG_FILL',
+    'ACCORDION',
+    'HOTSPOT',
+    'CAROUSEL',
+    'POP_CARD',
+  ]);
+  const source = Array.isArray(raw) ? raw.slice(0, 21) : [];
   const out = [];
-  for (let i = 0; i < arr.length; i++) {
-    const r = arr[i] || {};
-    const fallback = defaults[i % defaults.length];
-    const requestedType = String(r.type || fallback.type || 'TEXT').toUpperCase();
-    const type = !programmingTrack && requestedType === 'CODE_BUILDER'
-      ? 'DRAG_FILL'
-      : (canonicalTypes.has(requestedType) ? requestedType : String(fallback.type || 'TEXT').toUpperCase());
-    const title = String(r.title || fallback.title || `Step ${i + 1}`).trim() || `Step ${i + 1}`;
-    const id = String(r.id || `step-${i + 1}`).trim() || `step-${i + 1}`;
-    out.push({ id, title, type });
+  for (let i = 0; i < 21; i += 1) {
+    const row = source[i] || {};
+    const fallback = defaults[i];
+    const requestedType = String(row.type || '').toUpperCase();
+    let resolvedType = canonicalTypes.has(requestedType) ? requestedType : String(fallback.type || 'TEXT').toUpperCase();
+    if (!programmingTrack && resolvedType === 'CODE_BUILDER') resolvedType = 'DRAG_FILL';
+    const expectedType = String(fallback.type || 'TEXT').toUpperCase();
+    if (resolvedType !== expectedType) resolvedType = expectedType;
+    const rawTitle = String(row.title || '').replace(/\s+/g, ' ').trim();
+    const weakTitle = !rawTitle || /^step\s*\d+$/i.test(rawTitle) || /^lesson\s*\d+$/i.test(rawTitle);
+    const title = weakTitle ? String(fallback.title || `Step ${i + 1}`) : rawTitle;
+    out.push({
+      id: `step-${i + 1}`,
+      title,
+      type: resolvedType,
+    });
   }
   return out;
 }
@@ -1670,8 +1792,37 @@ function parseCorrectAnswers(raw, blankCount) {
 
 function isPlaceholderToken(token) {
   const t = String(token || '').trim().toLowerCase();
+  const weakWords = new Set([
+    'complete',
+    'code',
+    'snippet',
+    'find',
+    'maximum',
+    'minimum',
+    'max',
+    'min',
+    'statement',
+    'question',
+    'challenge',
+    'exercise',
+    'option',
+    'answer',
+    'blank',
+    'blanks',
+    'token',
+    'tokens',
+    'value',
+    'values',
+    'term',
+    'terms',
+    'left',
+    'right',
+  ]);
+  const normalizedWords = t.replace(/[^a-z0-9]+/g, ' ').split(/\s+/).filter(Boolean);
   return (
     !t ||
+    weakWords.has(t) ||
+    (normalizedWords.length > 0 && normalizedWords.every((word) => weakWords.has(word))) ||
     /^answer\s*\d+$/.test(t) ||
     /^blank\s*\d+$/.test(t) ||
     /^option\s*[a-z0-9]+$/.test(t) ||
@@ -1683,7 +1834,9 @@ function extractMeaningfulTokens(text, limit = 10) {
   const stopWords = new Set([
     'the', 'and', 'with', 'from', 'that', 'this', 'your', 'into', 'about', 'using',
     'each', 'left', 'right', 'blank', 'blanks', 'step', 'lesson', 'module', 'course',
-    'is', 'are', 'to', 'for', 'of', 'in', 'on', 'a', 'an', 'by', 'or', 'as', 'be'
+    'is', 'are', 'to', 'for', 'of', 'in', 'on', 'a', 'an', 'by', 'or', 'as', 'be',
+    'complete', 'code', 'snippet', 'find', 'maximum', 'minimum', 'question', 'challenge',
+    'exercise', 'answer', 'option', 'value', 'values', 'term', 'terms', 'token', 'tokens'
   ]);
   const words = String(text || '')
     .replace(/[_`*#()[\]{}<>.,;:!?/\\-]+/g, ' ')
@@ -1739,6 +1892,109 @@ function isPlaceholderQuizQuestion(question) {
 function isPlaceholderQuizOption(option) {
   const o = String(option || '').trim().toLowerCase();
   return !o || /^[a-d]$/.test(o) || /^option\s*[a-d0-9]+$/.test(o);
+}
+
+function isFinalModuleQuizTitle(value) {
+  const text = String(value || '').toLowerCase();
+  if (!text) return false;
+  if (text.includes('final module assessment')) return true;
+  if (text.includes('final quiz')) return true;
+  return /(?:module|final)\s+(?:assessment|quiz)/i.test(text);
+}
+
+function rebalanceQuizOptionOrder(options, correctAnswer, questionIndex = 0) {
+  const rows = Array.isArray(options) ? options.slice(0, 4) : [];
+  if (rows.length < 2) {
+    return { options: rows, correctAnswer: 0 };
+  }
+  const safeCorrect = Math.min(Math.max(Number(correctAnswer) || 0, 0), rows.length - 1);
+  const pattern = [1, 3, 0, 2];
+  const desired = Math.min(rows.length - 1, pattern[Math.abs(Number(questionIndex) || 0) % pattern.length]);
+  if (desired === safeCorrect) {
+    return { options: rows, correctAnswer: safeCorrect };
+  }
+  const correctValue = rows[safeCorrect];
+  const others = rows.filter((_, idx) => idx !== safeCorrect);
+  const nextOptions = [];
+  let cursor = 0;
+  for (let idx = 0; idx < rows.length; idx += 1) {
+    if (idx === desired) {
+      nextOptions.push(correctValue);
+    } else {
+      nextOptions.push(others[cursor] || correctValue);
+      cursor += 1;
+    }
+  }
+  return {
+    options: nextOptions,
+    correctAnswer: desired,
+  };
+}
+
+function buildFallbackQuizQuestions(topic, count) {
+  const target = Math.max(1, Math.floor(Number(count) || 1));
+  const topicText = String(topic || '').trim() || 'this lesson';
+  const seeds = [
+    {
+      question: `What is the best first move to apply ${topicText}?`,
+      options: [
+        'Connect the concept to one real scenario.',
+        'Skip context and guess answers.',
+        'Ignore feedback and checkpoints.',
+        'Memorize terms only.',
+      ],
+      correctAnswer: 0,
+    },
+    {
+      question: `Which behavior demonstrates mastery of ${topicText}?`,
+      options: [
+        'You can explain decisions with evidence from the lesson.',
+        'You avoid practical examples.',
+        'You never verify outcomes.',
+        'You change approach randomly each step.',
+      ],
+      correctAnswer: 0,
+    },
+    {
+      question: `A common error when studying ${topicText} is:`,
+      options: [
+        'Using short, repeated practice loops.',
+        'Linking concept to application.',
+        'Treating theory and practice as disconnected.',
+        'Checking results after each attempt.',
+      ],
+      correctAnswer: 2,
+    },
+    {
+      question: `Why does review matter after finishing a ${topicText} task?`,
+      options: [
+        'It confirms quality and improves future decisions.',
+        'It makes learning slower with no value.',
+        'It prevents useful feedback.',
+        'It replaces all practical practice.',
+      ],
+      correctAnswer: 0,
+    },
+  ];
+  const rows = [];
+  let cursor = 0;
+  while (rows.length < target) {
+    const seed = seeds[cursor % seeds.length];
+    const cycle = Math.floor(cursor / seeds.length) + 1;
+    const balanced = rebalanceQuizOptionOrder(
+      seed.options.slice(0, 4),
+      Math.max(0, Math.min(3, Number(seed.correctAnswer || 0))),
+      rows.length
+    );
+    rows.push({
+      question: `${seed.question}${cycle > 1 ? ` (${cycle})` : ''}`,
+      options: balanced.options,
+      correctAnswer: balanced.correctAnswer,
+      explanation: `This answer best aligns with practical application of ${topicText}.`,
+    });
+    cursor += 1;
+  }
+  return rows;
 }
 
 function normalizeFlashcardKey(value) {
@@ -1896,8 +2152,11 @@ function validateStepContent(type, obj) {
   }
 
   if (type === 'QUIZ') {
+    const isFinalModuleQuiz = isFinalModuleQuizTitle(safe(obj?.title, '')) || isFinalModuleQuizTitle(safe(obj?.lessonText, ''));
+    const targetQuestionCount = isFinalModuleQuiz ? 20 : 4;
+    const maxQuestionCount = isFinalModuleQuiz ? 24 : 6;
     const qs = Array.isArray(obj?.data?.questions) ? obj.data.questions : [];
-    const cleanedQuestions = qs.slice(0, 6).map((q) => {
+    const cleanedQuestions = qs.slice(0, maxQuestionCount).map((q, qIdx) => {
       const question = String(safe(q.question || q.statement || q.prompt, '')).trim();
       let options = Array.isArray(q.options)
         ? q.options.map((v) => String(v).trim()).filter(Boolean)
@@ -1943,31 +2202,26 @@ function validateStepContent(type, obj) {
 
       const explanation = String(safe(q.explanation, '')).trim()
         || `Review the lesson context to confirm why "${options[correctAnswer]}" is the best answer.`;
+      const balanced = rebalanceQuizOptionOrder(options, correctAnswer, qIdx);
 
       return {
         question,
-        options,
-        correctAnswer,
+        options: balanced.options,
+        correctAnswer: balanced.correctAnswer,
         explanation,
       };
     }).filter(Boolean);
 
+    const topicText = String(safe(base.title, 'this lesson')).trim() || 'this lesson';
+    const normalizedQuestions = cleanedQuestions.slice(0, maxQuestionCount);
+    if (!normalizedQuestions.length) {
+      normalizedQuestions.push(...buildFallbackQuizQuestions(topicText, targetQuestionCount));
+    } else if (normalizedQuestions.length < targetQuestionCount) {
+      normalizedQuestions.push(...buildFallbackQuizQuestions(topicText, targetQuestionCount - normalizedQuestions.length));
+    }
+
     base.data = {
-      questions: cleanedQuestions.length
-        ? cleanedQuestions
-        : [
-            {
-              question: `Which statement best reflects the core idea in ${safe(base.title, 'this lesson')}?`,
-              options: [
-                'It should align with concepts taught in this module.',
-                'It should ignore the lesson content completely.',
-                'It is unrelated to this course topic.',
-                'It must come from outside the module context.',
-              ],
-              correctAnswer: 0,
-              explanation: 'The correct choice is the one grounded in the module content.',
-            },
-          ],
+      questions: normalizedQuestions.slice(0, maxQuestionCount),
     };
   }
 
@@ -2005,9 +2259,20 @@ function validateStepContent(type, obj) {
     const outChallenges = challenges.slice(0, 6).map((ch) => {
       const rawTemplate = String(safe(ch?.codeTemplate || ch?.statement || ch?.prompt, '')).trim();
       const normalizedTemplate = normalizeTemplateBlanks(rawTemplate);
-      const templateWithBlanks = countTemplateBlanks(normalizedTemplate) > 0
+      const fallbackTopic = extractMeaningfulTokens(`${base.title} ${base.lessonText}`, 2).join(' ');
+      const fallbackTemplate = `In ${fallbackTopic || 'this lesson'}, ___ leads to ___.`;
+      const templateSeed = countTemplateBlanks(normalizedTemplate) > 0
         ? normalizedTemplate
-        : `${normalizedTemplate || rawTemplate || 'Complete the statement:'} ___`.trim();
+        : `${normalizedTemplate || rawTemplate || fallbackTemplate} ___`.trim();
+      const weakTemplateWords = String(templateSeed || '')
+        .replace(/[_`*#()[\]{}<>.,;:!?/\\-]+/g, ' ')
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(Boolean);
+      const weakTemplateCount = weakTemplateWords.filter((word) => isPlaceholderToken(word)).length;
+      const templateWithBlanks = (!templateSeed || (weakTemplateWords.length > 0 && weakTemplateCount >= Math.ceil(weakTemplateWords.length * 0.6)))
+        ? fallbackTemplate
+        : templateSeed;
       const initialBlankCount = Math.max(1, Math.min(4, countTemplateBlanks(templateWithBlanks)));
       const contextTokens = extractMeaningfulTokens(
         `${templateWithBlanks} ${safe(ch?.instruction, '')} ${safe(ch?.explanation, '')} ${base.title} ${base.lessonText}`
@@ -2019,7 +2284,7 @@ function validateStepContent(type, obj) {
       if (!options.length && Array.isArray(ch?.choices)) {
         options = ch.choices.map((o) => String(o).trim()).filter(Boolean);
       }
-      options = options.filter((opt) => !isPlaceholderToken(opt));
+      options = options.filter((opt) => !isPlaceholderToken(opt) && /[a-z0-9]/i.test(opt) && opt.length <= 64);
       if (!options.length) options = contextTokens.slice(0, 6);
 
       let answers = parseCorrectAnswers(ch?.correctAnswer, initialBlankCount).filter((ans) => !isPlaceholderToken(ans));
@@ -2043,7 +2308,7 @@ function validateStepContent(type, obj) {
         if (ans && !options.includes(ans)) options.unshift(ans);
       }
       if (!options.length) {
-        options = ['Concept', 'Application', 'Principle', 'Practice'];
+        options = ['Core concept', 'Practical action', 'Expected output', 'Correct sequence'];
       }
       options = Array.from(new Set(options.filter((opt) => !isPlaceholderToken(opt)))).slice(0, 12);
       if (options.length < Math.max(3, blankCount)) {
@@ -2053,7 +2318,7 @@ function validateStepContent(type, obj) {
         }
       }
       if (options.length < Math.max(blankCount + 1, 4)) {
-        for (const fallback of ['Concept', 'Application', 'Principle', 'Practice', 'Review']) {
+        for (const fallback of ['Core concept', 'Practical action', 'Expected output', 'Correct sequence', 'Key term']) {
           if (options.length >= Math.max(blankCount + 1, 4)) break;
           if (!options.includes(fallback)) options.push(fallback);
         }
@@ -2066,7 +2331,7 @@ function validateStepContent(type, obj) {
       }
 
       return {
-        instruction: String(safe(ch?.instruction, 'Fill each blank from left to right using terms from the previous lesson content.')),
+        instruction: String(safe(ch?.instruction, 'Fill each blank from left to right using topic terms from this lesson.')),
         codeTemplate,
         options,
         correctAnswer: answers.join(', '),
@@ -2158,12 +2423,32 @@ function validateStepContent(type, obj) {
       }
     }
 
+    const avatarInstructionRaw = String(safe(cb?.avatarInstruction, '')).trim();
+    const goalRaw = String(safe(cb?.goal, '')).trim();
+    const expectedOutputRaw = String(safe(cb?.expectedOutput, '')).trim();
+    const codingTopicHint = String(base.title || '').trim();
+    const arithmeticStyle = /\b(arithmetic|python|number|math|calculation)\b/i.test(
+      `${codingTopicHint} ${goalRaw} ${avatarInstructionRaw}`
+    );
+    const genericGoal = !goalRaw
+      || /\b(basic arithmetic calculations|complete the code by choosing the correct pieces|fill in the blanks to complete the code)\b/i.test(goalRaw);
+    const genericAvatar = !avatarInstructionRaw
+      || /\b(use python to perform basic arithmetic calculations|fill in the blanks to complete the code)\b/i.test(avatarInstructionRaw);
+    const normalizedGoal = genericGoal
+      ? (arithmeticStyle
+        ? 'Complete each mini-goal with concrete results: print 10, set buyer to "Bob", increase player score by 8, and set drink to "water".'
+        : `Complete each line to satisfy a concrete coding goal for ${codingTopicHint || 'this lesson'}.`)
+      : goalRaw;
+    const normalizedAvatarInstruction = genericAvatar
+      ? 'Choose the token that makes each mini-goal true, then continue to the next line.'
+      : avatarInstructionRaw;
+
     base.data = {
       codeBuilder: {
-        avatarInstruction: String(safe(cb?.avatarInstruction, 'Fill in the blanks to complete the code.')),
+        avatarInstruction: normalizedAvatarInstruction,
         title: String(safe(cb?.title, base.title || 'Interactive Coding')),
-        goal: String(safe(cb?.goal, 'Complete the code by choosing the correct pieces.')),
-        expectedOutput: String(safe(cb?.expectedOutput, '')),
+        goal: normalizedGoal,
+        expectedOutput: expectedOutputRaw,
         lines: lines.length ? lines : [{ content: 'print(___)', correctValue: '"Hello, World!"' }],
         options,
       }
@@ -2251,14 +2536,23 @@ function envList(name, fallback = []) {
 }
 
 function providerCandidates() {
-  return envList('AI_PROVIDER_CANDIDATES', ['openrouter', 'ollama', 'gemini', 'openai', 'anthropic']);
+  const requested = envList('AI_PROVIDER_CANDIDATES', ['openrouter', 'ollama', 'gemini', 'openai', 'anthropic'])
+    .map((v) => String(v || '').trim().toLowerCase())
+    .filter(Boolean);
+  const ordered = Array.from(new Set(requested));
+  const knownProviders = ['openrouter', 'mistral', 'ollama', 'gemini', 'openai', 'anthropic'];
+  for (const provider of knownProviders) {
+    if (ordered.includes(provider)) continue;
+    if (providerAvailable(provider)) ordered.push(provider);
+  }
+  return ordered;
 }
 
 function providerAvailable(provider) {
   if (provider === 'gemini') return !!process.env.GEMINI_API_KEY;
   if (provider === 'openai') return !!process.env.OPENAI_API_KEY;
   if (provider === 'anthropic') return !!process.env.ANTHROPIC_API_KEY;
-  if (provider === 'mistral') return !!process.env.MISTRAL_API_KEY;
+  if (provider === 'mistral') return mistralApiKeys().length > 0;
   if (provider === 'ollama') {
     const hasBase = !!String(process.env.OLLAMA_API_BASE || '').trim();
     const hasModels = envList('OLLAMA_MODELS', []).length > 0;
@@ -2293,6 +2587,8 @@ function modelCandidatesFor(provider) {
   if (provider === 'ollama') return envList('OLLAMA_MODELS', ['llama3.2:3b']);
   if (provider === 'openrouter') {
     return envList('OPENROUTER_MODELS', [
+      'mistralai/mistral-small-3.2-24b-instruct:free',
+      'mistralai/ministral-8b',
       'openai/gpt-4o-mini',
       'openai/gpt-4.1-mini',
       'google/gemini-2.0-flash-001',
@@ -2316,6 +2612,14 @@ function openRouterBaseMaxTokens() {
   return Math.max(256, Math.min(Math.floor(n), 4096));
 }
 
+function openRouterInterviewMaxKeys(defaultValue = 4) {
+  const totalKeys = openRouterApiKeys().length;
+  if (!totalKeys) return 0;
+  const raw = Number(process.env.OPENROUTER_INTERVIEW_MAX_KEYS || defaultValue);
+  if (!Number.isFinite(raw) || raw <= 0) return Math.min(totalKeys, 4);
+  return Math.max(1, Math.min(Math.floor(raw), totalKeys, 16));
+}
+
 function openRouterApiKeys() {
   const all = [
     ...envList('OPENROUTER_API_KEYS', []),
@@ -2334,6 +2638,31 @@ function pickOpenRouterApiKey(seed = '') {
   if (!hint) {
     const idx = openRouterKeyCursor % keys.length;
     openRouterKeyCursor += 1;
+    return keys[idx];
+  }
+  const hash = sha256(hint).slice(0, 8);
+  const idx = (Number.parseInt(hash, 16) || 0) % keys.length;
+  return keys[idx];
+}
+
+function mistralApiKeys() {
+  const all = [
+    ...envList('MISTRAL_API_KEYS', []),
+    String(process.env.MISTRAL_API_KEY || '').trim(),
+  ]
+    .map((k) => String(k || '').trim())
+    .filter(Boolean);
+  return Array.from(new Set(all));
+}
+
+let mistralKeyCursor = 0;
+function pickMistralApiKey(seed = '') {
+  const keys = mistralApiKeys();
+  if (!keys.length) return '';
+  const hint = String(seed || '').trim();
+  if (!hint) {
+    const idx = mistralKeyCursor % keys.length;
+    mistralKeyCursor += 1;
     return keys[idx];
   }
   const hash = sha256(hint).slice(0, 8);
@@ -2545,6 +2874,98 @@ function countUnicodeLetters(text) {
   return (String(text || '').match(/\p{L}/gu) || []).length;
 }
 
+function scriptSignalCount(text) {
+  return (String(text || '').match(/[\u1000-\u109F\u0E00-\u0E7F\u1780-\u17FF\u0E80-\u0EFF]/g) || []).length;
+}
+
+function looksLikeMojibakeText(value = '') {
+  const raw = String(value || '');
+  if (!raw.trim()) return false;
+  if (raw.includes('\uFFFD')) return true;
+  let hits = 0;
+  if (raw.includes('\u00C3')) hits += 1;
+  if (raw.includes('\u00C2')) hits += 1;
+  if (raw.includes('\u00E2')) hits += 1;
+  if (raw.includes('\u00E1\u20AC')) hits += 1;
+  if (raw.includes('\u00E0\u00B8')) hits += 1;
+  if (raw.includes('\u00E1\u00BA') || raw.includes('\u00E1\u00BB')) hits += 1;
+  if (hits >= 2) return true;
+  if (hits === 1) {
+    const nonAsciiCount = (raw.match(/[^\x00-\x7f]/g) || []).length;
+    return nonAsciiCount >= 4;
+  }
+  return false;
+}
+
+const CP1252_REVERSE_MAP = Object.freeze({
+  '\u20AC': 0x80,
+  '\u201A': 0x82,
+  '\u0192': 0x83,
+  '\u201E': 0x84,
+  '\u2026': 0x85,
+  '\u2020': 0x86,
+  '\u2021': 0x87,
+  '\u02C6': 0x88,
+  '\u2030': 0x89,
+  '\u0160': 0x8A,
+  '\u2039': 0x8B,
+  '\u0152': 0x8C,
+  '\u017D': 0x8E,
+  '\u2018': 0x91,
+  '\u2019': 0x92,
+  '\u201C': 0x93,
+  '\u201D': 0x94,
+  '\u2022': 0x95,
+  '\u2013': 0x96,
+  '\u2014': 0x97,
+  '\u02DC': 0x98,
+  '\u2122': 0x99,
+  '\u0161': 0x9A,
+  '\u203A': 0x9B,
+  '\u0153': 0x9C,
+  '\u017E': 0x9E,
+  '\u0178': 0x9F,
+});
+
+function decodeCp1252Mojibake(raw = '') {
+  const bytes = [];
+  for (const ch of String(raw || '')) {
+    if (Object.prototype.hasOwnProperty.call(CP1252_REVERSE_MAP, ch)) {
+      bytes.push(CP1252_REVERSE_MAP[ch]);
+      continue;
+    }
+    const cp = ch.codePointAt(0);
+    if (cp <= 0xFF) {
+      bytes.push(cp);
+      continue;
+    }
+    const fallback = Buffer.from(ch, 'utf8');
+    for (const b of fallback) bytes.push(b);
+  }
+  return Buffer.from(bytes).toString('utf8');
+}
+
+function repairLikelyMojibakeText(value = '') {
+  const raw = String(value || '');
+  if (!raw) return '';
+  if (!looksLikeMojibakeText(raw)) return raw;
+  try {
+    const repaired = decodeCp1252Mojibake(raw);
+    if (!repaired || repaired === raw) return raw;
+    const rawSignals = scriptSignalCount(raw);
+    const repairedSignals = scriptSignalCount(repaired);
+    const rawBurst = (raw.match(/\?{3,}/g) || []).length;
+    const repairedBurst = (repaired.match(/\?{3,}/g) || []).length;
+    if (repairedSignals > rawSignals || repairedBurst < rawBurst) return repaired;
+    const rawLetters = countUnicodeLetters(raw);
+    const repairedLetters = countUnicodeLetters(repaired);
+    if (repairedLetters >= rawLetters) return repaired;
+  } catch {
+    // keep original text on decode failures
+  }
+  return raw;
+}
+
 function isLikelyEnglishInterviewText(text) {
   const raw = String(text || '').toLowerCase();
   if (!raw.trim()) return false;
@@ -2631,6 +3052,32 @@ function textMeetsTargetScriptThreshold(text, languageCode, minRatio = 0.52) {
   return targetChars >= 8 && ratio >= minRatio;
 }
 
+function interviewQuestionScriptThreshold(languageCode) {
+  const code = normalizeInterviewLanguageCode(languageCode);
+  if (code === 'my') return 0.44;
+  return 0.52;
+}
+
+function interviewTextScriptThreshold(languageCode) {
+  const code = normalizeInterviewLanguageCode(languageCode);
+  if (code === 'my') return 0.42;
+  return 0.48;
+}
+
+function canUseSoftBurmeseQuestionSet(questions, minCount = 4) {
+  const rows = Array.isArray(questions) ? questions : [];
+  if (!rows.length || rows.length < Math.max(1, Number(minCount) || 4)) return false;
+  const cleanRows = rows.filter((row) => {
+    const text = String(row?.question || '').trim();
+    if (!text) return false;
+    if (looksLikeMojibakeText(text)) return false;
+    return true;
+  });
+  if (cleanRows.length < Math.max(1, Number(minCount) || 4)) return false;
+  const localizedCount = cleanRows.filter((row) => textHasTargetLanguageSignals(row?.question, 'my')).length;
+  return localizedCount >= Math.ceil(cleanRows.length * 0.35);
+}
+
 function hasStrongEnglishLeakage(text) {
   const raw = String(text || '').toLowerCase();
   if (!raw.trim()) return false;
@@ -2657,8 +3104,9 @@ function shouldForceLocalizedQuestionFallback(questions, targetLanguage) {
     return localizedCount < localizedFloor;
   }
   if (!Array.isArray(questions) || !questions.length) return true;
+  const scriptThreshold = interviewQuestionScriptThreshold(languageCode);
   const compliantCount = questions.filter((row) => (
-    textMeetsTargetScriptThreshold(row?.question, languageCode, 0.52)
+    textMeetsTargetScriptThreshold(row?.question, languageCode, scriptThreshold)
     && !hasStrongEnglishLeakage(row?.question)
   )).length;
   return compliantCount < Math.ceil(questions.length * 0.7);
@@ -2670,7 +3118,7 @@ function shouldForceLocalizedTextFallback(text, targetLanguage) {
   if (!['th', 'my', 'km', 'lo'].includes(languageCode)) {
     return isLikelyEnglishInterviewText(text) && !textHasTargetLanguageSignals(text, languageCode);
   }
-  return !textMeetsTargetScriptThreshold(text, languageCode, 0.48);
+  return !textMeetsTargetScriptThreshold(text, languageCode, interviewTextScriptThreshold(languageCode));
 }
 
 function interviewTranslationCode(targetLanguage) {
@@ -2687,6 +3135,12 @@ function interviewTranslationCode(targetLanguage) {
   return code || 'en';
 }
 
+function interviewTranslationTimeoutMs() {
+  const raw = Number(process.env.INTERVIEW_TRANSLATION_TIMEOUT_MS || 7000);
+  if (!Number.isFinite(raw)) return 7000;
+  return Math.max(3000, Math.min(Math.floor(raw), 20000));
+}
+
 function decodeHtmlEntities(text) {
   return String(text || '')
     .replace(/&#39;/g, "'")
@@ -2701,7 +3155,7 @@ async function translateTextWithMyMemory(text, targetLanguage) {
   const targetCode = interviewTranslationCode(targetLanguage);
   if (!input || !targetCode || targetCode === 'en') return input;
   const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(input)}&langpair=${encodeURIComponent(`en|${targetCode}`)}`;
-  const r = await fetchJson(url, { method: 'GET' }, 20000);
+  const r = await fetchJson(url, { method: 'GET' }, interviewTranslationTimeoutMs());
   if (!r.ok) {
     const e = new Error(String(r.json?.responseDetails || r.text || 'Translation request failed'));
     e.status = r.status || 502;
@@ -2716,7 +3170,7 @@ async function translateTextWithGoogleFree(text, targetLanguage) {
   const targetCode = interviewTranslationCode(targetLanguage);
   if (!input || !targetCode || targetCode === 'en') return input;
   const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(targetCode)}&dt=t&q=${encodeURIComponent(input)}`;
-  const r = await fetchJson(url, { method: 'GET' }, 20000);
+  const r = await fetchJson(url, { method: 'GET' }, interviewTranslationTimeoutMs());
   if (!r.ok) {
     const e = new Error(String(r.json?.error || r.text || 'Translation request failed'));
     e.status = r.status || 502;
@@ -2744,10 +3198,10 @@ async function safeTranslateInterviewText(text, targetLanguage) {
   if (!input) return input;
   const languageCode = normalizeInterviewLanguageCode(targetLanguage);
   if (languageCode === 'en') return input;
-  const translators = [
-    translateTextWithMyMemory,
-    translateTextWithGoogleFree,
-  ];
+  const scriptLockedLanguage = ['th', 'my', 'km', 'lo'].includes(languageCode);
+  const translators = scriptLockedLanguage
+    ? [translateTextWithGoogleFree, translateTextWithMyMemory]
+    : [translateTextWithMyMemory, translateTextWithGoogleFree];
 
   let best = input;
   for (const translate of translators) {
@@ -2755,10 +3209,11 @@ async function safeTranslateInterviewText(text, targetLanguage) {
       const translated = String(await translate(input, targetLanguage) || '').trim();
       if (!translated || translated === input) continue;
       if (looksLikeBrokenTranslation(translated)) continue;
-      best = translated;
-      if (textHasTargetLanguageSignals(translated, languageCode)) {
+      const localized = textHasTargetLanguageSignals(translated, languageCode);
+      if (localized) {
         return translated;
       }
+      if (!scriptLockedLanguage) best = translated;
     } catch {
       // try next translator
     }
@@ -2766,7 +3221,7 @@ async function safeTranslateInterviewText(text, targetLanguage) {
   return best;
 }
 
-async function localizeInterviewSessionQuestions(session, targetLanguage) {
+async function localizeInterviewSessionQuestions(session, targetLanguage, options = {}) {
   const languageCode = normalizeInterviewLanguageCode(targetLanguage);
   if (languageCode === 'en') return session;
   const questions = Array.isArray(session?.questions) ? session.questions : [];
@@ -2781,12 +3236,41 @@ async function localizeInterviewSessionQuestions(session, targetLanguage) {
     const text = String(questionText || '');
     if (!text.trim()) return false;
     if (['th', 'my', 'km', 'lo'].includes(languageCode)) {
-      return !textMeetsTargetScriptThreshold(text, languageCode, 0.5) || hasStrongEnglishLeakage(text);
+      return !textMeetsTargetScriptThreshold(text, languageCode, interviewTextScriptThreshold(languageCode)) || hasStrongEnglishLeakage(text);
     }
     return isLikelyEnglishInterviewText(text) || !textHasTargetLanguageSignals(text, languageCode);
   };
   const needQuestionLocalization = questions.some((row) => questionNeedsLocalization(row?.question));
   if (!needRoleLocalization && !needQuestionLocalization) return session;
+
+  const localizationRouter = options?.router && typeof options.router === 'object'
+    ? options.router
+    : null;
+  const localizationKeyBase = String(options?.keyBase || '').trim();
+  if (localizationRouter) {
+    try {
+      const aiLocalized = await localizeInterviewSessionWithAi(
+        session,
+        targetLanguage,
+        localizationRouter,
+        localizationKeyBase || 'interview-session'
+      );
+      const aiQuestions = Array.isArray(aiLocalized?.questions) ? aiLocalized.questions : [];
+      const aiRole = aiLocalized?.role || {};
+      const aiRoleBlock = [
+        String(aiRole?.roleSummary || ''),
+        ...(Array.isArray(aiRole?.responsibilities) ? aiRole.responsibilities : []),
+        ...(Array.isArray(aiRole?.requirements) ? aiRole.requirements : []),
+      ].join('\n');
+      const aiNeedRoleLocalization = shouldForceLocalizedTextFallback(aiRoleBlock, targetLanguage);
+      const aiNeedQuestionLocalization = aiQuestions.some((row) => questionNeedsLocalization(row?.question));
+      if (!aiNeedRoleLocalization && !aiNeedQuestionLocalization) {
+        return aiLocalized;
+      }
+    } catch {
+      // fall through to deterministic translator-based localization
+    }
+  }
 
   const localized = {
     ...session,
@@ -2797,24 +3281,39 @@ async function localizeInterviewSessionQuestions(session, targetLanguage) {
     },
     questions: questions.map((row) => ({ ...row })),
   };
+  const translationCache = new Map();
+  const translateCached = async (value) => {
+    const input = String(value || '').trim();
+    if (!input) return '';
+    let task = translationCache.get(input);
+    if (!task) {
+      task = safeTranslateInterviewText(input, targetLanguage);
+      translationCache.set(input, task);
+    }
+    const translated = String(await task || '').trim();
+    return translated || input;
+  };
 
   if (needRoleLocalization) {
-    localized.role.roleSummary = await safeTranslateInterviewText(localized.role.roleSummary, targetLanguage);
-    for (let i = 0; i < localized.role.responsibilities.length; i += 1) {
-      localized.role.responsibilities[i] = await safeTranslateInterviewText(localized.role.responsibilities[i], targetLanguage);
-    }
-    for (let i = 0; i < localized.role.requirements.length; i += 1) {
-      localized.role.requirements[i] = await safeTranslateInterviewText(localized.role.requirements[i], targetLanguage);
-    }
+    const [roleSummary, responsibilities, requirements] = await Promise.all([
+      translateCached(localized.role.roleSummary),
+      Promise.all(localized.role.responsibilities.map((item) => translateCached(item))),
+      Promise.all(localized.role.requirements.map((item) => translateCached(item))),
+    ]);
+    localized.role.roleSummary = roleSummary;
+    localized.role.responsibilities = responsibilities;
+    localized.role.requirements = requirements;
   }
 
   if (needQuestionLocalization) {
-    for (let i = 0; i < localized.questions.length; i += 1) {
-      if (questionNeedsLocalization(localized.questions[i].question)) {
-        localized.questions[i].question = await safeTranslateInterviewText(localized.questions[i].question, targetLanguage);
+    localized.questions = await Promise.all(localized.questions.map(async (row) => {
+      const nextRow = { ...row };
+      if (questionNeedsLocalization(nextRow.question)) {
+        nextRow.question = await translateCached(nextRow.question);
       }
-      localized.questions[i].question = enforceInterviewQuestionText(localized.questions[i].question, targetLanguage);
-    }
+      nextRow.question = enforceInterviewQuestionText(nextRow.question, targetLanguage);
+      return nextRow;
+    }));
   } else {
     for (let i = 0; i < localized.questions.length; i += 1) {
       localized.questions[i].question = enforceInterviewQuestionText(localized.questions[i].question, targetLanguage);
@@ -3166,7 +3665,7 @@ async function callOpenRouter(prompt, model, requestSeed = '', requestOptions = 
 
       if (isRetriableStatus(r.status)) {
         const retryErr = new Error(msg);
-        retryErr.status = r.status || 429;
+        retryErr.status = r.status || 503;
         lastTransientErr = retryErr;
         // Likely per-key pressure; immediately try next key.
         continue keyLoop;
@@ -3201,8 +3700,13 @@ function extractAssistantText(content) {
   return '';
 }
 
-async function callMistral(prompt, model) {
-  const key = process.env.MISTRAL_API_KEY;
+async function callMistral(prompt, model, requestSeed = '') {
+  const key = pickMistralApiKey(requestSeed);
+  if (!key) {
+    const e = new Error('Mistral API key is not configured.');
+    e.status = 503;
+    throw e;
+  }
   const url = 'https://api.mistral.ai/v1/chat/completions';
   const body = {
     model,
@@ -3398,7 +3902,7 @@ async function callProvider(provider, prompt, model, requestSeed = '', requestOp
   if (provider === 'gemini') return callGemini(prompt, model);
   if (provider === 'openai') return callOpenAI(prompt, model);
   if (provider === 'anthropic') return callAnthropic(prompt, model);
-  if (provider === 'mistral') return callMistral(prompt, model);
+  if (provider === 'mistral') return callMistral(prompt, model, requestSeed);
   if (provider === 'ollama') return callOllama(prompt, model, requestOptions);
   if (provider === 'openrouter') return callOpenRouter(prompt, model, requestSeed, requestOptions);
   throw new Error(`Unknown provider: ${provider}`);
@@ -3411,6 +3915,56 @@ function breakerState(provider) {
   const s = breaker.get(provider) || { fails: 0, openUntil: 0 };
   breaker.set(provider, s);
   return s;
+}
+
+function normalizeRouterMode(value = 'auto_thinking') {
+  const raw = String(value || 'auto_thinking').trim().toLowerCase();
+  if (raw === 'manual') return 'manual';
+  if (raw === 'auto_fast' || raw === 'autofast' || raw === 'fast') return 'auto_fast';
+  if (
+    raw === 'auto_thinking'
+    || raw === 'autothinking'
+    || raw === 'thinking'
+    || raw === 'auto'
+    || !raw
+  ) {
+    return 'auto_thinking';
+  }
+  return 'auto_thinking';
+}
+
+function prioritizeProviders(base = [], priority = []) {
+  const ordered = [];
+  const seen = new Set();
+  for (const p of priority) {
+    if (!base.includes(p) || seen.has(p)) continue;
+    ordered.push(p);
+    seen.add(p);
+  }
+  for (const p of base) {
+    if (seen.has(p)) continue;
+    ordered.push(p);
+    seen.add(p);
+  }
+  return ordered;
+}
+
+const AUTO_FAST_PROVIDER_PRIORITY = ['mistral', 'openrouter', 'openai', 'gemini', 'anthropic', 'ollama'];
+
+function pickAutoFastMistralModel(models = []) {
+  const rows = Array.isArray(models) ? models.map((m) => String(m || '').trim()).filter(Boolean) : [];
+  const priority = [
+    'open-mistral-nemo',
+    'mistral-small-latest',
+    'ministral-8b-latest',
+    'ministral-3b-latest',
+    'mistral-medium-latest',
+    'mistral-large-latest',
+  ];
+  for (const candidate of priority) {
+    if (rows.includes(candidate)) return candidate;
+  }
+  return rows[0] || 'open-mistral-nemo';
 }
 
 async function routeText(router, prompt, cacheKey, ttlMs = 7 * 24 * 60 * 60 * 1000, options = {}) {
@@ -3431,7 +3985,7 @@ async function routeText(router, prompt, cacheKey, ttlMs = 7 * 24 * 60 * 60 * 10
     if (cached?.text) return cached.text;
   }
 
-  const mode = router?.mode || 'auto';
+  const mode = normalizeRouterMode(router?.mode || 'auto');
   const provider = (router?.provider || 'auto').toLowerCase();
   const manualModel = router?.model || 'auto';
   const clientCandidates = Array.isArray(router?.modelCandidates) ? router.modelCandidates : null;
@@ -3440,7 +3994,11 @@ async function routeText(router, prompt, cacheKey, ttlMs = 7 * 24 * 60 * 60 * 10
   if (mode === 'manual' && provider !== 'auto') {
     if (providerAvailable(provider)) tryProviders.push(provider);
   } else {
-    for (const p of providerCandidates()) {
+    const availableProviders = providerCandidates().filter(providerAvailable);
+    const orderedProviders = mode === 'auto_fast'
+      ? prioritizeProviders(availableProviders, AUTO_FAST_PROVIDER_PRIORITY)
+      : availableProviders;
+    for (const p of orderedProviders) {
       if (providerAvailable(p)) tryProviders.push(p);
     }
   }
@@ -3448,7 +4006,7 @@ async function routeText(router, prompt, cacheKey, ttlMs = 7 * 24 * 60 * 60 * 10
   if (!tryProviders.length) {
     const selectedMsg = mode === 'manual' && provider !== 'auto'
       ? `Selected provider "${provider}" is not configured or unavailable.`
-      : 'No AI providers are configured. Add at least one API key (OPENROUTER_API_KEY / MISTRAL_API_KEY) or Ollama config (OLLAMA_API_BASE / OLLAMA_MODELS).';
+      : 'No AI providers are configured. Add at least one API key (OPENROUTER_API_KEY / OPENROUTER_API_KEYS / MISTRAL_API_KEY / MISTRAL_API_KEYS) or Ollama config (OLLAMA_API_BASE / OLLAMA_MODELS).';
     throw new Error(selectedMsg);
   }
 
@@ -3484,16 +4042,29 @@ async function routeText(router, prompt, cacheKey, ttlMs = 7 * 24 * 60 * 60 * 10
           ...envModels,
         ]))
       : envModels;
-    const canUseManual = !manualModelBlockedProviders.has(p) && (manualModel && manualModel !== 'auto') && (
+    const normalizedManualModel = String(manualModel || '').trim();
+    const effectiveManualModel = (
+      normalizedManualModel === 'auto-fast'
+      || normalizedManualModel === 'auto-thinking'
+    )
+      ? 'auto'
+      : normalizedManualModel;
+    const canUseManual = !manualModelBlockedProviders.has(p) && (effectiveManualModel && effectiveManualModel !== 'auto') && (
       (mode === 'manual' && provider !== 'auto') ||
-      (p === 'gemini' && String(manualModel).startsWith('gemini')) ||
-      (p === 'openai' && String(manualModel).startsWith('gpt')) ||
-      (p === 'anthropic' && String(manualModel).startsWith('claude')) ||
-      (p === 'mistral' && /^(mistral|ministral|codestral|pixtral)/i.test(String(manualModel))) ||
-      (p === 'ollama' && !String(manualModel).includes('/')) ||
-      (p === 'openrouter' && String(manualModel).includes('/'))
+      (p === 'gemini' && String(effectiveManualModel).startsWith('gemini')) ||
+      (p === 'openai' && String(effectiveManualModel).startsWith('gpt')) ||
+      (p === 'anthropic' && String(effectiveManualModel).startsWith('claude')) ||
+      (p === 'mistral' && /^(open-mistral|mistral|ministral|codestral|pixtral)/i.test(String(effectiveManualModel))) ||
+      (p === 'ollama' && !String(effectiveManualModel).includes('/')) ||
+      (p === 'openrouter' && String(effectiveManualModel).includes('/'))
     );
-    const chosenModel = canUseManual ? manualModel : (models[modelAttempt % Math.max(models.length, 1)] || models[0] || 'gpt-4o-mini');
+    const chosenModel = canUseManual
+      ? effectiveManualModel
+      : (
+          mode === 'auto_fast' && p === 'mistral'
+            ? pickAutoFastMistralModel(models)
+            : (models[modelAttempt % Math.max(models.length, 1)] || models[0] || 'gpt-4o-mini')
+        );
 
     try {
       const remainingBudgetMs = Math.max(5000, maxTotalMs - (Date.now() - startedAt));
@@ -4571,6 +5142,21 @@ function promptInterviewQuestionsDirect(options = {}) {
   const requestedJobTitle = String(options?.requestedJobTitle || 'target role').replace(/\s+/g, ' ').trim() || 'target role';
   const targetLanguage = String(options?.targetLanguage || 'en-US').trim() || 'en-US';
   const targetLanguageLabel = String(options?.targetLanguageLabel || interviewLanguageLabel(targetLanguage)).trim() || targetLanguage;
+  const localeCode = normalizeInterviewLanguageCode(targetLanguage);
+  const candidateName = String(options?.candidateName || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  const region = String(options?.region || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  const profileSkills = normalizeInterviewList(options?.profileSkills, 10, 80);
+  const profileExperience = Array.isArray(options?.profileExperience)
+    ? options.profileExperience
+      .map((row) => {
+        const role = String(row?.role || '').replace(/\s+/g, ' ').trim();
+        const org = String(row?.organization || '').replace(/\s+/g, ' ').trim();
+        if (!role && !org) return '';
+        return org ? `${role} @ ${org}`.trim() : role;
+      })
+      .filter(Boolean)
+      .slice(0, 6)
+    : [];
   const seniorityRaw = String(options?.seniority || 'mid').trim().toLowerCase();
   const seniority = ['entry', 'mid', 'senior'].includes(seniorityRaw) ? seniorityRaw : 'mid';
   const questionFocusRaw = String(options?.questionFocus || 'mixed').trim().toLowerCase();
@@ -4579,20 +5165,43 @@ function promptInterviewQuestionsDirect(options = {}) {
   const questionPlan = options?.questionPlan && typeof options.questionPlan === 'object' ? options.questionPlan : {};
   const defaultCount = seniority === 'entry' ? 6 : (seniority === 'senior' ? 10 : 8);
   const questionCount = Math.max(4, Math.min(12, Number(options?.questionCount || questionPlan?.targetCount) || defaultCount));
+  const strictLocaleGate = localeCode === 'en'
+    ? '- Language gate: English output is allowed.'
+    : (['my', 'th', 'km', 'lo'].includes(localeCode)
+      ? `- CRITICAL LANGUAGE GATE: Use ${targetLanguageLabel} script for at least 95% of letters in ALL learner-facing text. Do not use English sentence frames.`
+      : `- CRITICAL LANGUAGE GATE: All learner-facing text must be fully in ${targetLanguageLabel}. Avoid English sentence frames; only keep unavoidable proper nouns/tool names.`);
   return `Return ONLY valid JSON (no markdown, no extra text).
 
 You are a professional multilingual interviewer creating realistic hiring questions for a ${seniority}-level ${requestedJobTitle} candidate.
-Generate ${questionCount} interview questions focused on ${questionFocus}, based on real job responsibilities, practical workflows, and skills commonly evaluated in actual interviews.
-Write all questions in ${targetLanguageLabel} (${targetLanguage}).
+Generate exactly ${questionCount} interview questions focused on ${questionFocus}, based on real responsibilities and required skills for this role.
+Also generate ONE short roleSummary sentence that reflects real responsibilities and required skills of ${requestedJobTitle}.
+Write roleSummary and all questions in ${targetLanguageLabel} (${targetLanguage}).
 Keep each question concise, professional, non-repetitive, and tightly role-specific.
 Avoid generic, theoretical, trivia-style, or overly broad questions.
-Every question must end with "?".
+- Keep role.jobTitle exactly as "${requestedJobTitle}" (no renaming or role substitution).
+- If profile history is unrelated to "${requestedJobTitle}", use only transferable skills and do NOT inject unrelated company names/domains.
+- Never overfit to profile context when it conflicts with requested role responsibilities.
+${region ? `Target market/region context: ${region}.` : ''}
+${profileSkills.length ? `Candidate skills context: ${profileSkills.join(', ')}.` : ''}
+${profileExperience.length ? `Candidate experience context: ${profileExperience.join(' | ')}.` : ''}
+${strictLocaleGate}
+- Self-check before final output: reject and rewrite any row containing mixed-language sentence scaffolding.
+
 Each question should be creative. Avoid simple format.
 Forbidden generic questions: "Tell me about yourself", "Why should we hire you?", "What are your strengths and weaknesses?", "Walk me through your resume".
 Do not output interview questions in English unless target language is English.
-
+If target language is not English, keep each full sentence in the target language and avoid English scaffold words like "Scenario", "KPI", "diagnostic", or "recovery".
+If target language is not English, the question must be completely generated in (${targetLanguage}).
+${candidateName ? `Use candidate name "${candidateName}" naturally in 1-2 questions only; do not force it into every question.` : ''}
 ${strictRetry ? `Previous output was weak. Regenerate from scratch and keep every question tightly role-specific for "${requestedJobTitle}".` : ''}
-Return ONLY valid JSON with exactly this schema: [{"id":"string","question":"string","focus":"string"}].`;
+Return ONLY valid JSON with exactly this schema:
+{
+  "role": {
+    "jobTitle": "string",
+    "roleSummary": "string"
+  },
+  "questions": [{"id":"string","question":"string","focus":"string"}]
+}.`;
 }
 
 function buildOutlineFactCorrectionContext(topic, answers = {}) {
@@ -4815,27 +5424,14 @@ function fallbackModuleLessonPlan(courseTitle, moduleTitle, moduleDesc = '') {
   const tokens = extractMeaningfulTokens(`${moduleTitle} ${moduleDesc}`, 4);
   const primary = tokens[0] || moduleTitle || 'This topic';
   const secondary = tokens[1] || tokens[0] || primary;
+  const tertiary = tokens[2] || tokens[1] || tokens[0] || secondary;
   const lessonTopics = [
     `${primary} Fundamentals`,
     `${secondary} Practical Applications`,
+    `${tertiary} Mastery`,
   ];
 
-  const flow = programmingTrack
-    ? ['TEXT', 'LEARNING_CARD', 'FLIP_CARD', 'VIDEO', 'CODE_BUILDER', 'DRAG_FILL', 'QUIZ']
-    : ['TEXT', 'LEARNING_CARD', 'FLIP_CARD', 'VIDEO', 'POP_CARD', 'DRAG_FILL', 'QUIZ'];
-
-  const titleFor = (lessonTopic, type) => {
-    if (type === 'TEXT') return `${lessonTopic}: Core Concepts`;
-    if (type === 'LEARNING_CARD') return `Learning Cards: ${lessonTopic} Essentials`;
-    if (type === 'FLIP_CARD') return `Flashcards: Key Terms in ${lessonTopic}`;
-    if (type === 'VIDEO') return `Video: ${lessonTopic} Walkthrough`;
-    if (type === 'CODE_BUILDER') return `Interactive Coding: ${lessonTopic}`;
-    if (type === 'ACCORDION') return `Concept Breakdown: ${lessonTopic}`;
-    if (type === 'POP_CARD') return `Pop Cards: ${lessonTopic} Insights`;
-    if (type === 'DRAG_FILL') return `Challenge: Apply ${lessonTopic}`;
-    if (type === 'QUIZ') return `Quiz: ${lessonTopic} Checkpoint`;
-    return `${lessonTopic}: ${type}`;
-  };
+  const flow = lessonFlowTypes(programmingTrack);
 
   const out = [];
   let cursor = 1;
@@ -4843,7 +5439,7 @@ function fallbackModuleLessonPlan(courseTitle, moduleTitle, moduleDesc = '') {
     for (const type of flow) {
       out.push({
         id: `step-${cursor}`,
-        title: titleFor(lessonTopic, type),
+        title: titleForLessonFlowStep(lessonTopic, type),
         type,
       });
       cursor += 1;
@@ -4878,8 +5474,8 @@ Plan a detailed module lesson plan for:
 Profile constraints:
 ${profileRules}
 
-Output 14 to 21 steps organized as 2 to 3 lessons (7 sub-contents per lesson in sequence).
-Each lesson should have clear sub-content titles and practical progression.
+Output exactly 21 steps organized as exactly 3 lessons (7 sub-contents per lesson in sequence).
+Each lesson must have clear sub-content titles and practical progression.
 
 Required sub-content flow per lesson:
 - Step1 TEXT (teaching first, not quiz)
@@ -4905,6 +5501,8 @@ function promptStepContent(courseTitle, moduleTitle, stepTitle, type, referenceC
   const normalizedProfile = normalizeProfileContext(profileContext);
   const programmingTrack = isProgrammingTopic(courseTitle, moduleTitle, stepTitle);
   const lowBandwidth = normalizedProfile.lowBandwidthMode;
+  const finalModuleQuiz = String(type || '').toUpperCase() === 'QUIZ' && isFinalModuleQuizTitle(stepTitle);
+  const quizQuestionCount = finalModuleQuiz ? 20 : 4;
   const flashcardRule = String(type || '').toUpperCase() === 'FLIP_CARD'
     ? '- For FLIP_CARD: do not repeat fronts/backs from earlier flashcards listed in reference context.\n'
     : '';
@@ -4913,7 +5511,7 @@ function promptStepContent(courseTitle, moduleTitle, stepTitle, type, referenceC
     : '\nReference context from earlier generated lesson content:\n- Not available yet. Use module and step titles directly and keep the challenge coherent.\n';
 
   const profileRules = profileRulesText(profileContext);
-  return `Return ONLY valid JSON (no markdown, no explanations outside JSON).\n\nGenerate lesson content for:\nCourse: ${courseTitle}\nModule: ${moduleTitle}\nStep: ${stepTitle}\nType: ${type}\n${referenceBlock}\nProfile constraints:\n${profileRules}\nGlobal rules:\n- Include lessonText: 1 concise sentence intro.\n- Keep content scannable: bullets, short sentences.\n- Use specific, meaningful titles and terms from this module.\n- Never generate random or unrelated tasks.\n- Make every quiz/challenge item traceable to concepts already taught in TEXT/VIDEO/learning cards.\n- Keep content localized to output language code ${normalizedProfile.preferredLanguage}.\n\nType-specific formats:\nTEXT => {type,title,lessonText,data:{content:string (markdown)}}\nACCORDION => data:{items:[{title,content}]} (3 items)\nFLIP_CARD => data:{cards:[{front,back,icon?,imageUrl?}]} (4 cards)\nVIDEO => data:{videoUrl (embed), videoTitle, content (short summary + bullets), videoWebUrl?}\nQUIZ => data:{questions:[{question,options[4],correctAnswer(0-3),explanation}]} (4 questions)\nCODE_BUILDER => data:{codeBuilder:{avatarInstruction,lines:[{content,correctValue}],options:[string]}}\nDRAG_FILL => data:{challenges:[{instruction,codeTemplate,options,correctAnswer,explanation}]}\nHOTSPOT => data:{image,points:[{title,content,icon}]}\nCAROUSEL => data:{slides:[{title,content,imagePrompt,imageUrl}] }\nLEARNING_CARD => data:{learningCards:[{title,content,layout}]}\nPOP_CARD => data:{cards:[{title,content,icon?,imageUrl?}]} (3-5 cards)\n\nExtra rules:\n- Use exact topic terms from module and step titles in all generated items.\n- If VIDEO: use an EMBEDDABLE URL format https://www.youtube-nocookie.com/embed/<real_11_char_video_id>. Never output placeholders like VIDEO_ID.\n- For VIDEO: pick a topic-related YouTube result, and prefer regular videos over Shorts when both are relevant.\n- For FLIP_CARD: each card front must be unique and clearly tied to this step title.\n- For DRAG_FILL: instruction must clearly state what learner should do, where to get clues, and how to fill blanks in order.\n- For DRAG_FILL: each challenge must use 2-4 blanks maximum.\n- For DRAG_FILL: options must be meaningful domain terms; never output placeholders like answer1, answer2, A, B, C, D.\n- For DRAG_FILL: if codeTemplate has N blanks, correctAnswer must have exactly N comma-separated answers in the same order.\n- For QUIZ/DRAG_FILL: each question/challenge must include terms from the reference context, module title, or video summary.\n${lowBandwidth ? '- Low bandwidth mode is active: minimize media-heavy dependencies and provide text-first alternatives.\n' : ''}${flashcardRule}${programmingTrack ? '- For CODE_BUILDER: each line.content must contain exactly one ___ and correctValue must match one option exactly.\n- For CODE_BUILDER: correctValue must be a SINGLE value (no commas, no multiple answers).\n- For CODE_BUILDER: options must be short code tokens/expressions only (no full sentences, no questions).' : '- This is not a programming topic. Avoid code syntax and use plain-language, topic-relevant activities.'}`;
+  return `Return ONLY valid JSON (no markdown, no explanations outside JSON).\n\nGenerate lesson content for:\nCourse: ${courseTitle}\nModule: ${moduleTitle}\nStep: ${stepTitle}\nType: ${type}\n${referenceBlock}\nProfile constraints:\n${profileRules}\nGlobal rules:\n- Include lessonText: 1 concise sentence intro.\n- Keep content scannable: bullets, short sentences.\n- Use specific, meaningful titles and terms from this module.\n- Never generate random or unrelated tasks.\n- Make every quiz/challenge item traceable to concepts already taught in TEXT/VIDEO/learning cards.\n- Keep content localized to output language code ${normalizedProfile.preferredLanguage}.\n\nType-specific formats:\nTEXT => {type,title,lessonText,data:{content:string (markdown)}}\nACCORDION => data:{items:[{title,content}]} (3 items)\nFLIP_CARD => data:{cards:[{front,back,icon?,imageUrl?}]} (4 cards)\nVIDEO => data:{videoUrl (embed), videoTitle, content (short summary + bullets), videoWebUrl?}\nQUIZ => data:{questions:[{question,options[4],correctAnswer(0-3),explanation}]} (${quizQuestionCount} questions)\nCODE_BUILDER => data:{codeBuilder:{avatarInstruction,goal,expectedOutput?,lines:[{content,correctValue}],options:[string]}}\nDRAG_FILL => data:{challenges:[{instruction,codeTemplate,options,correctAnswer,explanation}]}\nHOTSPOT => data:{image,points:[{title,content,icon}]}\nCAROUSEL => data:{slides:[{title,content,imagePrompt,imageUrl}] }\nLEARNING_CARD => data:{learningCards:[{title,content,layout}]}\nPOP_CARD => data:{cards:[{title,content,icon?,imageUrl?}]} (3-5 cards)\n\nExtra rules:\n- Use exact topic terms from module and step titles in all generated items.\n- If VIDEO: use an EMBEDDABLE URL format https://www.youtube-nocookie.com/embed/<real_11_char_video_id>. Never output placeholders like VIDEO_ID.\n- For VIDEO: pick a topic-related YouTube result, and prefer regular videos over Shorts when both are relevant.\n- For FLIP_CARD: each card front must be unique and clearly tied to this step title.\n- For DRAG_FILL: instruction must clearly state what learner should do, where to get clues, and how to fill blanks in order.\n- For DRAG_FILL: each challenge must use 2-4 blanks maximum.\n- For DRAG_FILL: options must be meaningful domain terms; never output placeholders like answer1, answer2, A, B, C, D.\n- For DRAG_FILL: if codeTemplate has N blanks, correctAnswer must have exactly N comma-separated answers in the same order.\n- For QUIZ: distribute correctAnswer indices across 0,1,2,3 instead of repeating mostly 0 or 2.\n- For QUIZ/DRAG_FILL: each question/challenge must include terms from the reference context, module title, or video summary.\n- For CODE_BUILDER: avoid vague goals like "perform basic arithmetic calculations"; each line must map to a concrete mini-goal.\n${finalModuleQuiz ? '- Final Module Assessment quiz must include 20 MCQs and cover the full module scope.' : ''}\n${lowBandwidth ? '- Low bandwidth mode is active: minimize media-heavy dependencies and provide text-first alternatives.\n' : ''}${flashcardRule}${programmingTrack ? '- For CODE_BUILDER: each line.content must contain exactly one ___ and correctValue must match one option exactly.\n- For CODE_BUILDER: correctValue must be a SINGLE value (no commas, no multiple answers).\n- For CODE_BUILDER: options must be short code tokens/expressions only (no full sentences, no questions).\n- For CODE_BUILDER: include codeBuilder.goal as one clear sentence with concrete outcomes (example style: print 10, set buyer to "Bob", increase score by 8, set drink to "water").' : '- This is not a programming topic. Avoid code syntax and use plain-language, topic-relevant activities.'}`;
 }
 
 function promptTutorAsk(contentJson, question) {
@@ -4994,12 +5592,390 @@ Rules:
 - Do not remove required fields.`;
 }
 
+function extractFirstUrl(text) {
+  const match = String(text || '').match(/https?:\/\/[^\s)]+/i);
+  return match ? String(match[0]).trim() : '';
+}
+
+function extractAllUrls(text, max = 8) {
+  const raw = String(text || '');
+  const matches = raw.match(/https?:\/\/[^\s)]+/gi) || [];
+  const out = [];
+  const seen = new Set();
+  for (const item of matches) {
+    const url = normalizeReferenceUrl(item);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    out.push(url);
+    if (out.length >= Math.max(1, Math.min(20, Number(max) || 8))) break;
+  }
+  return out;
+}
+
+function inferRequestedAddCount(text, fallback = 1, maxCount = 4) {
+  const raw = String(text || '').toLowerCase();
+  const words = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6 };
+  const direct = raw.match(/\b(?:add|more|extra|additional)\s+(\d+|one|two|three|four|five|six)\b/i);
+  const aroundTarget = raw.match(/\b(\d+|one|two|three|four|five|six)\s+(?:more\s+)?(?:videos?|challenges?|exercises?|lines?|tasks?)\b/i);
+  const token = (direct?.[1] || aroundTarget?.[1] || '').toLowerCase();
+
+  let count = Number.parseInt(token, 10);
+  if (!Number.isFinite(count)) {
+    count = words[token] || 0;
+  }
+  if (!Number.isFinite(count) || count <= 0) {
+    if (/\b(a few|several)\b/i.test(raw)) count = 2;
+    else count = fallback;
+  }
+  return Math.max(1, Math.min(maxCount, count));
+}
+
+async function youtubeSearchEmbeddableNoKeyRelaxed(query, excludeIds = []) {
+  try {
+    const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(String(query || '').trim())}`;
+    const r = await fetchJson(searchUrl, {
+      method: 'GET',
+      headers: {
+        'accept-language': 'en-US,en;q=0.9',
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      }
+    }, 12000);
+    if (!r.ok || !r.text) return null;
+    const excluded = new Set((excludeIds || []).map((v) => normalizeYoutubeVideoId(v)).filter(Boolean));
+    const ids = [];
+    const re = /"videoId":"([a-zA-Z0-9_-]{11})"/g;
+    let m;
+    while ((m = re.exec(r.text)) !== null) {
+      const id = normalizeYoutubeVideoId(m[1]);
+      if (id && !excluded.has(id) && !ids.includes(id)) ids.push(id);
+      if (ids.length >= 16) break;
+    }
+    for (const id of ids) {
+      const web = `https://www.youtube.com/watch?v=${id}`;
+      const oembed = `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(web)}`;
+      const oe = await fetchJson(oembed, { method: 'GET' }, 8000);
+      if (!oe.ok) continue;
+      const title = String(oe.json?.title || 'Video').trim() || 'Video';
+      if (isLikelyYouTubeShort(title, 0)) continue;
+      return {
+        videoUrl: `https://www.youtube-nocookie.com/embed/${id}`,
+        videoWebUrl: web,
+        videoTitle: title,
+      };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+async function pickAdditionalYoutubeVideos(query, excludedIds = new Set(), targetCount = 1) {
+  const out = [];
+  const excluded = excludedIds instanceof Set ? excludedIds : new Set(Array.isArray(excludedIds) ? excludedIds : []);
+  const desired = Math.max(1, Math.min(4, Number(targetCount) || 1));
+  const baseQuery = String(query || '').replace(/\s+/g, ' ').trim();
+  if (!baseQuery) return out;
+
+  let attempts = 0;
+  const maxAttempts = Math.max(2, desired * 4);
+  while (out.length < desired && attempts < maxAttempts) {
+    attempts += 1;
+    const blocked = Array.from(excluded);
+    const picked = await youtubeSearchEmbed(`${baseQuery} tutorial`, blocked)
+      || await youtubeSearchEmbedNoKey(`${baseQuery} tutorial`, blocked)
+      || await youtubeSearchEmbeddableNoKeyRelaxed(`${baseQuery} tutorial`, blocked)
+      || await youtubeSearchEmbeddableNoKeyRelaxed(baseQuery, blocked)
+      || null;
+    if (!picked) break;
+
+    const id = extractYoutubeVideoId(picked.videoWebUrl) || extractYoutubeVideoId(picked.videoUrl);
+    if (!id || excluded.has(id)) continue;
+    excluded.add(id);
+    out.push({
+      videoUrl: `https://www.youtube-nocookie.com/embed/${id}`,
+      videoWebUrl: `https://www.youtube.com/watch?v=${id}`,
+      videoTitle: String(picked.videoTitle || 'Video Lesson').trim() || 'Video Lesson',
+    });
+  }
+  return out;
+}
+
+function buildCodeBuilderScenarioLine(topic, index = 0) {
+  const safeTopic = String(topic || '').replace(/\s+/g, ' ').trim() || 'this coding task';
+  const templates = [
+    {
+      goal: 'Make the code print 10.',
+      content: 'print(___)  # target: 10',
+      correctValue: '10',
+      options: ['10', '8', '"10"', 'True'],
+      expectedOutput: '10',
+    },
+    {
+      goal: 'Set the ticket buyer name to Bob.',
+      content: 'receipt = ___ + " bought 2 tickets"',
+      correctValue: '"Bob"',
+      options: ['"Bob"', '"Alice"', '2', 'None'],
+      expectedOutput: 'Bob bought 2 tickets',
+    },
+    {
+      goal: 'Increase the player score by 8.',
+      content: 'player_score = player_score + ___',
+      correctValue: '8',
+      options: ['8', '2', '-8', '"8"'],
+      expectedOutput: 'Score increases by 8',
+    },
+    {
+      goal: 'Store the drink name as water.',
+      content: 'drink = ___',
+      correctValue: '"water"',
+      options: ['"water"', '"juice"', '0', 'False'],
+      expectedOutput: 'water',
+    },
+    {
+      goal: `Fill the blank with a valid value related to ${safeTopic}.`,
+      content: 'result = ___',
+      correctValue: '42',
+      options: ['42', '0', 'None', '"result"'],
+      expectedOutput: '',
+    },
+  ];
+  return templates[Math.max(0, index % templates.length)];
+}
+
+async function applyDirectTutorEdit(contentJson, editPrompt) {
+  const content = contentJson && typeof contentJson === 'object' ? contentJson : null;
+  if (!content) return null;
+  const prompt = String(editPrompt || '').trim();
+  const lower = prompt.toLowerCase();
+  const type = String(content?.type || '').toUpperCase();
+
+  if (type === 'VIDEO') {
+    const wantsMoreVideos = /\b(add|more|extra|additional)\b.*\bvideos?\b|\bmore videos?\b|\badd\b.*\bvideo\b/i.test(lower);
+    const wantsReplaceVideo = /\b(change|replace|switch|another|different|new)\b.*\bvideo\b/i.test(lower);
+    if (!wantsMoreVideos && !wantsReplaceVideo) return null;
+
+    const safeVideo = validateStepContent('VIDEO', content);
+    const before = validateStepContent('VIDEO', safeVideo);
+    const existingIds = new Set();
+    const collectId = (raw) => {
+      const id = extractYoutubeVideoId(raw);
+      if (id) existingIds.add(id);
+    };
+    collectId(safeVideo?.data?.videoWebUrl);
+    collectId(safeVideo?.data?.videoUrl);
+    for (const ref of Array.isArray(safeVideo?.data?.references) ? safeVideo.data.references : []) {
+      collectId(ref?.url);
+    }
+
+    const directUrls = extractAllUrls(prompt, 10);
+    const directCandidates = [];
+    for (const rawUrl of directUrls) {
+      const id = extractYoutubeVideoId(rawUrl);
+      if (!id || existingIds.has(id)) continue;
+      existingIds.add(id);
+      directCandidates.push({
+        videoUrl: `https://www.youtube-nocookie.com/embed/${id}`,
+        videoWebUrl: `https://www.youtube.com/watch?v=${id}`,
+        videoTitle: safeVideo?.data?.videoTitle || safeVideo?.title || 'Video Lesson',
+      });
+    }
+
+    const query = String(
+      `${safeVideo?.data?.videoTitle || safeVideo?.title || ''} ${prompt || ''}`.trim()
+      || safeVideo?.data?.videoTitle
+      || safeVideo?.title
+      || prompt
+      || 'tutorial'
+    )
+      .replace(/[^\w\s-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim() || 'tutorial';
+
+    let next = {
+      ...safeVideo,
+      data: {
+        ...(safeVideo?.data || {}),
+      },
+    };
+    const isYoutubeReference = (url) => {
+      const raw = String(url || '').trim();
+      if (!raw) return false;
+      return !!extractYoutubeVideoId(raw) || /^https?:\/\/(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(raw);
+    };
+
+    if (wantsReplaceVideo) {
+      let primary = directCandidates.shift() || null;
+      if (!primary) {
+        const fetched = await pickAdditionalYoutubeVideos(query, existingIds, 1);
+        primary = fetched[0] || null;
+      }
+      if (!primary) {
+        primary = curatedVideo(query) || curatedVideo(String(safeVideo?.title || ''));
+      }
+      if (primary) {
+        const primaryId = extractYoutubeVideoId(primary.videoWebUrl) || extractYoutubeVideoId(primary.videoUrl);
+        if (primaryId) existingIds.add(primaryId);
+        next.data.videoUrl = primary.videoUrl;
+        next.data.videoWebUrl = primary.videoWebUrl;
+        next.data.videoTitle = primary.videoTitle || next.data.videoTitle || safeVideo.title || 'Video Lesson';
+        next.data.references = (Array.isArray(next?.data?.references) ? next.data.references : [])
+          .filter((ref) => !isYoutubeReference(ref?.url));
+      }
+    }
+
+    if (wantsMoreVideos) {
+      const addCount = inferRequestedAddCount(prompt, 1, 4);
+      const extras = [];
+      while (directCandidates.length && extras.length < addCount) {
+        extras.push(directCandidates.shift());
+      }
+      if (extras.length < addCount) {
+        const fetched = await pickAdditionalYoutubeVideos(query, existingIds, addCount - extras.length);
+        extras.push(...fetched);
+      }
+      const searchFallbackRefs = [];
+      if (extras.length < addCount) {
+        const missing = addCount - extras.length;
+        for (let idx = 0; idx < missing; idx += 1) {
+          searchFallbackRefs.push({
+            title: `Find more videos: ${query} (${idx + 1})`,
+            url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${query} tutorial`)}`,
+            kind: 'web',
+          });
+        }
+      }
+      if (!next.data.videoUrl && extras.length) {
+        const first = extras.shift();
+        next.data.videoUrl = first.videoUrl;
+        next.data.videoWebUrl = first.videoWebUrl;
+        next.data.videoTitle = first.videoTitle || next.data.videoTitle || safeVideo.title || 'Video Lesson';
+      }
+
+      const refs = [
+        ...(Array.isArray(next?.data?.references) ? next.data.references : []),
+        next?.data?.videoWebUrl
+          ? { title: next?.data?.videoTitle || next.title || 'Primary video', url: next.data.videoWebUrl, kind: 'youtube' }
+          : null,
+        ...extras.map((item, idx) => ({
+          title: item?.videoTitle || `Related video ${idx + 1}`,
+          url: item?.videoWebUrl || '',
+          kind: 'youtube',
+        })),
+        ...searchFallbackRefs,
+      ];
+      next.data.references = normalizeReferences(refs).slice(0, 12);
+    }
+
+    const out = validateStepContent('VIDEO', next);
+    if (JSON.stringify(out) === JSON.stringify(before)) return null;
+    return out;
+  }
+
+  if (type === 'DRAG_FILL') {
+    const wantsAddChallenges = /\b(add|more|extra|additional)\b.*\b(challenge|challenges|exercise|exercises)\b/i.test(lower);
+    const wantsDeleteChallenge = /\b(delete|remove)\b.*\b(challenge|exercise)\b/i.test(lower);
+    if (!wantsAddChallenges && !wantsDeleteChallenge) return null;
+
+    const safeDrag = validateStepContent('DRAG_FILL', content);
+    const before = validateStepContent('DRAG_FILL', safeDrag);
+    let challenges = Array.isArray(safeDrag?.data?.challenges) ? safeDrag.data.challenges.slice(0, 10) : [];
+    if (wantsDeleteChallenge && challenges.length > 1) {
+      challenges = challenges.slice(0, -1);
+    }
+    if (wantsAddChallenges) {
+      const addCount = inferRequestedAddCount(prompt, 1, 4);
+      const topic = String(safeDrag?.title || 'this topic').replace(/^challenge\s*:\s*/i, '').trim() || 'this topic';
+      for (let idx = 0; idx < addCount; idx += 1) {
+        const n = challenges.length + 1;
+        challenges.push({
+          instruction: `Challenge ${n}: complete the blanks in order to satisfy the goal for ${topic}.`,
+          codeTemplate: `Goal ${n}: first identify the ___ in ${topic}, then apply it through ___.`,
+          options: ['core concept', 'one practical action', 'random guessing', 'skipping validation'],
+          correctAnswer: 'core concept, one practical action',
+          explanation: `A strong answer starts with the key concept, then applies it in a practical step.`,
+        });
+      }
+    }
+    const out = validateStepContent('DRAG_FILL', {
+      ...safeDrag,
+      data: {
+        ...(safeDrag?.data || {}),
+        challenges,
+      },
+    });
+    if (JSON.stringify(out) === JSON.stringify(before)) return null;
+    return out;
+  }
+
+  if (type === 'CODE_BUILDER') {
+    const wantsAddLines = /\b(add|more|extra|additional)\b.*\b(lines?|challenges?|tasks?|exercises?)\b/i.test(lower);
+    const wantsDeleteLine = /\b(delete|remove)\b.*\b(lines?|challenges?|tasks?|exercises?)\b/i.test(lower);
+    if (!wantsAddLines && !wantsDeleteLine) return null;
+
+    const safeCode = validateStepContent('CODE_BUILDER', content);
+    const before = validateStepContent('CODE_BUILDER', safeCode);
+    const cb = safeCode?.data?.codeBuilder || {};
+    let lines = Array.isArray(cb.lines) ? cb.lines.slice(0, 10) : [];
+    let options = Array.isArray(cb.options) ? cb.options.slice(0, 20) : [];
+    const addedGoals = [];
+    const expectedOutputs = [];
+    if (wantsDeleteLine && lines.length > 2) {
+      lines = lines.slice(0, -1);
+    }
+    if (wantsAddLines) {
+      const addCount = inferRequestedAddCount(prompt, 1, 4);
+      const topic = String(safeCode?.title || 'coding').replace(/^interactive coding\s*:\s*/i, '').trim() || 'coding';
+      const baseLineCount = lines.length;
+      for (let idx = 0; idx < addCount && lines.length < 10; idx += 1) {
+        const scenario = buildCodeBuilderScenarioLine(topic, baseLineCount + idx);
+        lines.push({
+          content: scenario.content,
+          correctValue: scenario.correctValue,
+        });
+        addedGoals.push(scenario.goal);
+        if (scenario.expectedOutput) expectedOutputs.push(scenario.expectedOutput);
+        for (const opt of scenario.options) {
+          if (!options.includes(opt)) options.push(opt);
+        }
+      }
+    }
+    const goalRaw = String(cb?.goal || '').trim();
+    const avatarRaw = String(cb?.avatarInstruction || '').trim();
+    const expectedOutputRaw = String(cb?.expectedOutput || '').trim();
+    const genericGoal = !goalRaw || /\b(basic arithmetic calculations|complete the code by choosing|fill in the blanks to complete the code)\b/i.test(goalRaw);
+    const genericAvatar = !avatarRaw || /\b(basic arithmetic calculations|fill in the blanks)\b/i.test(avatarRaw);
+    const nextCodeBuilder = {
+      ...cb,
+      avatarInstruction: genericAvatar
+        ? 'Choose the option that makes each mini-goal true, then continue to the next line.'
+        : avatarRaw,
+      goal: (genericGoal && addedGoals.length)
+        ? `Complete each mini-goal: ${addedGoals.join(' ')}`
+        : goalRaw,
+      expectedOutput: expectedOutputRaw || expectedOutputs.join(', '),
+      lines,
+      options,
+    };
+    const out = validateStepContent('CODE_BUILDER', {
+      ...safeCode,
+      data: {
+        ...(safeCode?.data || {}),
+        codeBuilder: nextCodeBuilder,
+      },
+    });
+    if (JSON.stringify(out) === JSON.stringify(before)) return null;
+    return out;
+  }
+
+  return null;
+}
+
 function normalizeInterviewList(items, max = 12, itemMax = 220) {
   const rows = Array.isArray(items) ? items : [];
   const out = [];
   const seen = new Set();
   for (const row of rows) {
-    const value = String(row || '').replace(/\s+/g, ' ').trim();
+    const value = repairLikelyMojibakeText(String(row || '')).replace(/\s+/g, ' ').trim();
     if (!value) continue;
     if (value.length < 3) continue;
     const trimmed = value.slice(0, itemMax);
@@ -5012,13 +5988,109 @@ function normalizeInterviewList(items, max = 12, itemMax = 220) {
   return out;
 }
 
+function normalizeInterviewCandidateName(value = '') {
+  const raw = String(value || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  if (!raw) return '';
+  const lettersOnly = raw.replace(/[^A-Za-z\s.'-]/g, '').trim();
+  if (!lettersOnly) return '';
+  const words = lettersOnly.split(/\s+/).filter(Boolean);
+  if (words.length < 1 || words.length > 4) return '';
+  const titled = words
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ')
+    .trim();
+  if (!titled) return '';
+  const lower = titled.toLowerCase();
+  if (/\b(developer|engineer|manager|designer|analyst|specialist|intern|assistant|officer|consultant)\b/.test(lower)) return '';
+  return titled;
+}
+
+function inferInterviewCandidateName(profile = {}) {
+  const directCandidates = [
+    profile?.fullName,
+    profile?.name,
+    profile?.displayName,
+  ];
+  for (const candidate of directCandidates) {
+    const normalized = normalizeInterviewCandidateName(candidate);
+    if (normalized) return normalized;
+  }
+  return '';
+}
+
 function inferInterviewRoleTrack(jobTitle = '', profile = {}) {
   const title = String(jobTitle || '').toLowerCase();
   const skillText = normalizeInterviewList(profile?.skills, 12, 80).join(' ').toLowerCase();
   const combined = `${title} ${skillText}`.replace(/\s+/g, ' ').trim();
-  const handsOnPattern = /\b(toilet|cleaner|cleaning|janitor|housekeeping|housekeeper|sanitation|waste|garbage|driver|delivery|rider|courier|warehouse|picker|packer|loader|cashier|retail|shop assistant|waiter|server|cook|kitchen helper|security guard|construction|laborer|helper|mechanic|car wash|laundry|nanny|caregiver|maid)\b/;
+  const handsOnPattern = /\b(toilet|cleaner|cleaning|janitor|housekeeping|housekeeper|sanitation|waste|garbage|driver|delivery|rider|courier|warehouse|picker|packer|loader|cashier|retail|shop assistant|waiter|server|cook|kitchen helper|security guard|construction|laborer|helper|mechanic|car wash|laundry|nanny|caregiver|maid|farm|farmer|farmhand|dairy|milker|cow milker|livestock|animal care|ranch|barn|herder)\b/;
   if (handsOnPattern.test(combined)) return 'hands_on';
   return 'knowledge';
+}
+
+function specializedEnglishFallbackRole(role = '', skillHints = '') {
+  const title = String(role || '').toLowerCase();
+  if (!title) return null;
+  if (/\b(police|law enforcement|constable|patrol officer|detective|investigator)\b/i.test(title)) {
+    return {
+      jobTitle: role,
+      roleSummary: `We are hiring a ${role} to protect public safety, enforce laws fairly, and de-escalate incidents under pressure.`,
+      responsibilities: [
+        'Respond to incidents, assess risk quickly, and apply lawful procedures.',
+        'Gather evidence, document case details, and write clear incident reports.',
+        'Use de-escalation and communication to resolve conflict safely.',
+        'Coordinate with dispatch, emergency services, and community stakeholders.',
+        'Maintain professional conduct, ethics, and accountability on every shift.',
+      ],
+      requirements: [
+        `Demonstrated readiness for ${role} duties through field training, practical exercises, or relevant service experience.`,
+        `Strong fundamentals in ${skillHints || 'situation assessment, communication, and lawful decision-making'}.`,
+        'Ability to make sound decisions in high-pressure and ambiguous situations.',
+        'Clear report writing, evidence handling discipline, and procedural consistency.',
+        'Professional integrity, emotional control, and community-focused mindset.',
+      ],
+    };
+  }
+  if (/\b(audition|singer|singing|vocal|vocalist|performer|musician|music)\b/i.test(title)) {
+    return {
+      jobTitle: role,
+      roleSummary: `We are hiring a ${role} who can deliver consistent live performance quality, adapt quickly to feedback, and engage diverse audiences.`,
+      responsibilities: [
+        'Prepare and deliver performances with strong vocal control and stage presence.',
+        'Interpret creative direction and adjust performance style for different formats.',
+        'Collaborate with coaches, producers, and teammates during rehearsals.',
+        'Manage pressure in auditions and maintain quality under time constraints.',
+        'Review performance recordings and improve through structured iteration.',
+      ],
+      requirements: [
+        `Demonstrated readiness for ${role} responsibilities through stage work, auditions, or portfolio evidence.`,
+        `Strong fundamentals in ${skillHints || 'vocal technique, rehearsal discipline, and audience communication'}.`,
+        'Ability to receive critical feedback and convert it into measurable improvement.',
+        'Reliable preparation habits, time management, and professional attitude.',
+        'Confidence to perform consistently in high-visibility evaluation settings.',
+      ],
+    };
+  }
+  if (/\b(sailor|seafarer|maritime|deckhand|able seaman|navy)\b/i.test(title)) {
+    return {
+      jobTitle: role,
+      roleSummary: `We are hiring a ${role} who can execute maritime operations safely, follow navigation and safety procedures, and perform reliably at sea.`,
+      responsibilities: [
+        'Support vessel operations, deck duties, and safety drills according to protocol.',
+        'Monitor equipment status and report hazards or faults immediately.',
+        'Follow watchkeeping routines and maintain clear shift handovers.',
+        'Coordinate with crew during docking, cargo, and emergency scenarios.',
+        'Maintain logs and compliance records with accuracy and timeliness.',
+      ],
+      requirements: [
+        `Demonstrated readiness for ${role} responsibilities through maritime training, onboard practice, or related certifications.`,
+        `Strong fundamentals in ${skillHints || 'maritime safety, communication, and procedural execution'}.`,
+        'Ability to perform under changing weather and operational pressure.',
+        'Discipline in safety compliance, checklist execution, and teamwork.',
+        'Professional reliability, stamina, and accountability in shift-based work.',
+      ],
+    };
+  }
+  return null;
 }
 
 function fallbackInterviewRole(jobTitle, profile = {}, targetLanguage = 'en-US') {
@@ -5027,6 +6099,7 @@ function fallbackInterviewRole(jobTitle, profile = {}, targetLanguage = 'en-US')
   const skills = normalizeInterviewList(profile?.skills, 6, 80);
   const skillHints = skills.length ? skills.join(', ') : 'communication, collaboration, and structured problem solving';
   const roleTrack = inferInterviewRoleTrack(role, profile);
+  const specializedEnglishRole = specializedEnglishFallbackRole(role, skillHints);
   if (languageCode === 'th') {
     return {
       jobTitle: role,
@@ -5168,22 +6241,24 @@ function fallbackInterviewRole(jobTitle, profile = {}, targetLanguage = 'en-US')
     };
   }
   return {
-    jobTitle: role,
-    roleSummary: `We are hiring a ${role} who can deliver measurable work outcomes, communicate clearly, and collaborate with cross-functional teams.`,
-    responsibilities: [
-      `Plan and execute core ${role} responsibilities with clear ownership.`,
-      'Communicate progress, blockers, and decisions to stakeholders.',
-      'Document outcomes and maintain quality standards in daily work.',
-      'Coordinate with peers to deliver projects on deadline.',
-      'Continuously improve workflows using feedback and metrics.',
-    ],
-    requirements: [
-      `Demonstrated readiness for ${role} responsibilities through practical work, internships, or projects.`,
-      `Strong fundamentals in ${skillHints}.`,
-      'Clear verbal and written communication.',
-      'Ability to work with structure, deadlines, and accountability.',
-      'Professional attitude and growth mindset.',
-    ],
+    ...(specializedEnglishRole || {
+      jobTitle: role,
+      roleSummary: `We are hiring a ${role} who can deliver measurable work outcomes, communicate clearly, and collaborate with cross-functional teams.`,
+      responsibilities: [
+        `Plan and execute core ${role} responsibilities with clear ownership.`,
+        'Communicate progress, blockers, and decisions to stakeholders.',
+        'Document outcomes and maintain quality standards in daily work.',
+        'Coordinate with peers to deliver projects on deadline.',
+        'Continuously improve workflows using feedback and metrics.',
+      ],
+      requirements: [
+        `Demonstrated readiness for ${role} responsibilities through practical work, internships, or projects.`,
+        `Strong fundamentals in ${skillHints}.`,
+        'Clear verbal and written communication.',
+        'Ability to work with structure, deadlines, and accountability.',
+        'Professional attitude and growth mindset.',
+      ],
+    }),
   };
 }
 
@@ -5304,7 +6379,7 @@ function extractInterviewRoleRaw(raw) {
 }
 
 function sanitizeInterviewQuestionText(text) {
-  return String(text || '')
+  return repairLikelyMojibakeText(String(text || ''))
     .replace(/\s+/g, ' ')
     .replace(/^(?:[-*]|\d+[.)]|q\d+[:.)-])\s*/i, '')
     .trim();
@@ -5865,6 +6940,7 @@ function normalizeAiOnlyInterviewQuestions(raw, targetLanguage = 'en-US', target
 
 function evaluateAiOnlyInterviewQuestions(questions, requestedJobTitle = '', targetLanguage = 'en-US', minCount = 4) {
   const rows = Array.isArray(questions) ? questions : [];
+  const languageCode = normalizeInterviewLanguageCode(targetLanguage);
   if (!rows.length) return { ok: false, reason: 'empty', genericCount: 0, roleMentionCount: 0 };
   if (rows.length < Math.max(1, Number(minCount) || 4)) {
     return { ok: false, reason: 'too_few', genericCount: 0, roleMentionCount: 0 };
@@ -5887,9 +6963,12 @@ function evaluateAiOnlyInterviewQuestions(questions, requestedJobTitle = '', tar
   const total = rows.length;
   const genericLimit = Math.max(1, Math.floor(total * 0.5));
   if (genericCount > genericLimit) {
+    if (languageCode === 'my') {
+      return { ok: true, reason: 'ok_soft_generic_my', genericCount, roleMentionCount };
+    }
     return { ok: false, reason: 'too_generic', genericCount, roleMentionCount };
   }
-  if (normalizeInterviewLanguageCode(targetLanguage) === 'en' && roleTokens.length) {
+  if (languageCode === 'en' && roleTokens.length) {
     const roleMentionRequired = Math.max(1, Math.ceil(total * 0.3));
     if (roleMentionCount < roleMentionRequired) {
       return { ok: false, reason: 'off_role', genericCount, roleMentionCount };
@@ -5900,6 +6979,7 @@ function evaluateAiOnlyInterviewQuestions(questions, requestedJobTitle = '', tar
 
 function marketDrivenEnglishFallbackInterviewQuestions(jobTitle, roleContext = {}, profile = {}, options = {}) {
   const role = String(roleContext?.jobTitle || jobTitle || 'this role').trim() || 'this role';
+  const candidateName = normalizeInterviewCandidateName(options?.candidateName || '');
   const roleTrack = String(options?.roleTrack || inferInterviewRoleTrack(role, profile)).trim().toLowerCase() === 'hands_on'
     ? 'hands_on'
     : 'knowledge';
@@ -5933,6 +7013,14 @@ function marketDrivenEnglishFallbackInterviewQuestions(jobTitle, roleContext = {
       ? 'cross-team, production-scale delivery'
       : 'real project work with measurable outcomes';
   const regionClause = region ? ` in ${region}` : '';
+  const withCandidateName = (question, idx) => {
+    const base = String(question || '').trim();
+    if (!candidateName || !base || idx > 1) return base;
+    const head = base.charAt(0);
+    const tail = base.slice(1);
+    if (!/[A-Za-z]/.test(head)) return `${candidateName}, ${base}`;
+    return `As ${candidateName}, ${head.toLowerCase()}${tail}`;
+  };
 
   const templateByFocus = roleTrack === 'hands_on'
     ? {
@@ -5974,9 +7062,9 @@ function marketDrivenEnglishFallbackInterviewQuestions(jobTitle, roleContext = {
       (idx) => `Describe a failure or rollback related to "${anchorAt(idx)}". What did you change to prevent recurrence?`,
     ],
     scenario: [
-      (idx) => `Scenario: In your first 30 days as ${role}, a key KPI drops while working on "${anchorAt(idx)}". What diagnostic and recovery plan would you run?`,
-      (idx) => `Scenario: A stakeholder requests a last-minute change that threatens quality for "${anchorAt(idx)}". How do you negotiate scope, timeline, and trade-offs?`,
-      (idx) => `Scenario: You can ship only one item this week: "${anchorAt(idx)}" or "${anchorAt(idx + 1)}". Which do you choose first and why?`,
+      (idx) => `In your first 30 days as ${role}, a key performance metric drops while you are delivering ${anchorAt(idx)}. How would you diagnose the root cause and recover outcomes?`,
+      (idx) => `A stakeholder requests a last-minute change that puts quality at risk for ${anchorAt(idx)}. How would you negotiate scope, timeline, and trade-offs?`,
+      (idx) => `You can deliver only one high-impact item this week: ${anchorAt(idx)} or ${anchorAt(idx + 1)}. Which would you prioritize first, and why?`,
     ],
     technical: [
       (idx) => `How would you technically execute "${anchorAt(idx)}" using ${skillAt(idx)} while keeping quality and maintainability?`,
@@ -6027,12 +7115,13 @@ function marketDrivenEnglishFallbackInterviewQuestions(jobTitle, roleContext = {
     const builder = builders[cursor % builders.length];
     focusCursor[focus] = cursor + 1;
     const question = String(typeof builder === 'function' ? builder(idx) : '').replace(/\s+/g, ' ').trim();
-    const key = question.toLowerCase();
-    if (question.length >= 24 && !seen.has(key)) {
+    const personalizedQuestion = withCandidateName(question, questions.length);
+    const key = personalizedQuestion.toLowerCase();
+    if (personalizedQuestion.length >= 24 && !seen.has(key)) {
       seen.add(key);
       questions.push({
         id: `q${questions.length + 1}`,
-        question,
+        question: personalizedQuestion,
         focus,
       });
     }
@@ -6046,6 +7135,388 @@ function marketDrivenEnglishFallbackInterviewQuestions(jobTitle, roleContext = {
     ];
   }
   return questions;
+}
+
+function slugifyCareerGuideId(value = '', fallbackIndex = 1) {
+  const normalized = String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 72);
+  if (normalized) return normalized;
+  return `role-${Math.max(1, Number(fallbackIndex) || 1)}`;
+}
+
+function normalizeCareerGuidanceSources(rawSources, fallbackTitle = '') {
+  const rows = Array.isArray(rawSources)
+    ? rawSources
+    : (rawSources && typeof rawSources === 'object'
+      ? Object.values(rawSources)
+      : []);
+  const out = [];
+  const seen = new Set();
+  for (const row of rows) {
+    let label = '';
+    let url = '';
+    if (row && typeof row === 'object') {
+      label = String(row?.label || row?.title || row?.name || row?.source || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 120);
+      url = String(row?.url || row?.href || row?.link || '').trim();
+    } else if (typeof row === 'string') {
+      url = row.trim();
+    }
+    if (!/^https?:\/\//i.test(url)) continue;
+    if (!label) {
+      try {
+        const parsed = new URL(url);
+        label = parsed.hostname.replace(/^www\./i, '') || 'Source';
+      } catch {
+        label = 'Source';
+      }
+    }
+    const key = `${label.toLowerCase()}|${url.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ label, url });
+    if (out.length >= 4) break;
+  }
+  if (out.length) return out;
+  const roleQuery = encodeURIComponent(String(fallbackTitle || '').trim() || 'career role');
+  return [
+    { label: 'BLS Occupational Outlook Handbook', url: `https://www.bls.gov/ooh/search.htm?ST=${roleQuery}` },
+    { label: 'O*NET OnLine', url: `https://www.onetonline.org/find/quick?s=${roleQuery}` },
+  ];
+}
+
+function inferCareerGuidanceTrack(title = '') {
+  const lower = String(title || '').toLowerCase();
+  if (/\bfull[\s-]*stack\b/.test(lower)) return 'fullstack';
+  if (/\b(front[\s-]*end|frontend|ui|ux|web developer|web engineer)\b/.test(lower)) return 'frontend';
+  if (/\b(back[\s-]*end|backend|api|server)\b/.test(lower)) return 'backend';
+  if (/\b(devops|sre|site reliability|platform engineer|cloud engineer|infrastructure)\b/.test(lower)) return 'devops';
+  if (/\b(data scientist|data engineer|data analyst|machine learning|ml engineer|ai engineer|analytics|business intelligence|bi)\b/.test(lower)) return 'data';
+  if (/\b(qa|quality assurance|sdet|test engineer|automation tester)\b/.test(lower)) return 'qa';
+  if (/\b(product manager|project manager|program manager)\b/.test(lower)) return 'management';
+  return 'general';
+}
+
+function isSeniorCareerRoleTitle(title = '') {
+  return /\b(senior|sr\.?|lead|principal|staff|architect|manager|head|director)\b/i.test(String(title || ''));
+}
+
+function mergeCareerGuidanceItems(primary = [], additions = [], max = 8) {
+  const out = [];
+  const seen = new Set();
+  for (const row of [...primary, ...additions]) {
+    const value = String(row || '').replace(/\s+/g, ' ').trim().slice(0, 220);
+    if (!value) continue;
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+function isWeakCareerGuidanceList(items = [], kind = 'requirements', isSenior = false) {
+  const rows = normalizeInterviewList(items, 12, 220);
+  if (!rows.length) return true;
+  const minimum = kind === 'requirements'
+    ? (isSenior ? 6 : 5)
+    : (isSenior ? 5 : 4);
+  if (rows.length < minimum) return true;
+  const genericPattern = kind === 'requirements'
+    ? /\b(proven experience|strong proficiency|familiarity|knowledge of|communication skills|team player|problem-solving ability)\b/i
+    : /\b(collaborate with|deliver .* outcomes|maintain .* quality|support .* team|ensure .* responsiveness)\b/i;
+  const genericHits = rows.filter((row) => genericPattern.test(row)).length;
+  return genericHits >= Math.max(2, Math.ceil(rows.length * 0.5));
+}
+
+function careerGuidanceResponsibilityBoost(title = '') {
+  const track = inferCareerGuidanceTrack(title);
+  const isSenior = isSeniorCareerRoleTitle(title);
+  const trackMap = {
+    frontend: [
+      'Design scalable front-end architecture, component boundaries, and state-management patterns.',
+      'Own performance budgets and improve Core Web Vitals, rendering speed, and bundle efficiency.',
+      'Define UI quality gates using unit, integration, and E2E testing strategies.',
+      'Partner with design/product to translate requirements into accessible, production-ready interfaces.',
+    ],
+    backend: [
+      'Design reliable APIs and service contracts with clear versioning and backward compatibility.',
+      'Optimize database access, caching, and query performance for high-throughput workloads.',
+      'Implement observability, error budgets, and incident response practices for backend services.',
+      'Improve service reliability through resiliency patterns, testing, and release controls.',
+    ],
+    fullstack: [
+      'Deliver end-to-end features across UI, API, data, and deployment pipelines.',
+      'Set cross-stack standards for test coverage, code quality, and release readiness.',
+      'Diagnose production bottlenecks and lead performance, reliability, and maintainability improvements.',
+      'Coordinate implementation tradeoffs across product, design, and engineering stakeholders.',
+    ],
+    data: [
+      'Build and maintain robust data pipelines, quality checks, and reproducible analysis workflows.',
+      'Develop production-ready models or analytics assets with monitoring and drift awareness.',
+      'Translate business questions into measurable metrics, experiments, and reporting frameworks.',
+      'Document assumptions, validation methods, and decision impacts for stakeholder trust.',
+    ],
+    devops: [
+      'Design CI/CD pipelines, deployment strategies, and environment governance for safe releases.',
+      'Automate infrastructure provisioning and enforce reliability, security, and compliance baselines.',
+      'Implement monitoring, alerting, and incident workflows to improve service uptime.',
+      'Drive platform efficiency through capacity planning, cost optimization, and tooling automation.',
+    ],
+    qa: [
+      'Build risk-based test strategies covering functional, regression, integration, and non-functional scope.',
+      'Own automation frameworks and test data strategy integrated with CI/CD pipelines.',
+      'Define release quality thresholds and collaborate on defect prevention at design time.',
+      'Track quality metrics and drive root-cause analysis for recurring production defects.',
+    ],
+    management: [
+      'Prioritize roadmap delivery by balancing customer impact, technical risk, and team capacity.',
+      'Define measurable outcomes and align cross-functional teams on milestones and dependencies.',
+      'Manage delivery risk through structured planning, escalation, and transparent communication.',
+      'Drive continuous process improvement using delivery metrics and retrospective actions.',
+    ],
+    general: [
+      'Own delivery outcomes with measurable quality, speed, and stakeholder impact.',
+      'Translate goals into executable plans, milestones, and risk-managed implementation steps.',
+      'Maintain quality standards through structured review, testing, and post-release learning.',
+      'Collaborate across teams to unblock dependencies and improve execution predictability.',
+    ],
+  };
+  const base = trackMap[track] || trackMap.general;
+  const seniorExtras = [
+    'Lead architecture decisions and technical direction across multiple initiatives.',
+    'Mentor team members, enforce engineering standards, and improve review quality.',
+    'Communicate delivery strategy and technical risks to senior stakeholders and leadership.',
+  ];
+  return isSenior ? [...base, ...seniorExtras] : base;
+}
+
+function careerGuidanceRequirementBoost(title = '') {
+  const track = inferCareerGuidanceTrack(title);
+  const isSenior = isSeniorCareerRoleTitle(title);
+  const trackMap = {
+    frontend: [
+      'Advanced TypeScript and modern framework architecture (React/Vue/Angular) for large-scale apps.',
+      'Performance optimization expertise: Core Web Vitals, rendering, bundle strategy, and profiling.',
+      'Testing depth across unit, integration, and E2E pipelines (Jest/Vitest, Cypress/Playwright).',
+      'Accessibility and design-system implementation aligned with WCAG standards.',
+      'Front-end security knowledge: XSS prevention, auth/session handling, and browser hardening.',
+      'CI/CD and observability workflows for reliable releases and production debugging.',
+    ],
+    backend: [
+      'Strong API and service design expertise, including auth, rate limiting, and versioning.',
+      'Data modeling and database optimization skills for transactional integrity and performance.',
+      'Proficiency in distributed systems fundamentals: scalability, reliability, and fault tolerance.',
+      'Production testing strategy across unit, integration, contract, and load testing.',
+      'Security practices for APIs and data: secrets management, encryption, and vulnerability handling.',
+      'Operational excellence with monitoring, logging, tracing, and incident response.',
+    ],
+    fullstack: [
+      'Strong full-stack architecture skills spanning UI patterns, API design, and data modeling.',
+      'Hands-on testing strategy across front-end, back-end, and end-to-end flows.',
+      'Cloud deployment proficiency with CI/CD, containers, and environment automation.',
+      'Performance optimization across browser, API, and database layers.',
+      'Security fundamentals across application, API, data, and dependency lifecycle.',
+      'Ability to debug production systems using observability and telemetry.',
+    ],
+    data: [
+      'Strong statistics/data modeling skills and practical SQL/Python for production analytics.',
+      'Experience building maintainable data pipelines with quality, lineage, and validation controls.',
+      'Model evaluation and monitoring skills, including drift detection and performance tracking.',
+      'Data visualization and storytelling ability for non-technical and executive audiences.',
+      'Experimentation and metric design skills for evidence-based decision making.',
+      'Data governance awareness: privacy, security, and responsible AI/data use.',
+    ],
+    devops: [
+      'Deep CI/CD expertise, including rollback strategy, progressive delivery, and release governance.',
+      'Infrastructure-as-code proficiency (Terraform/CloudFormation or equivalent) and automation mindset.',
+      'Cloud platform operations knowledge for networking, IAM, compute, and storage reliability.',
+      'Observability stack expertise for metrics, logs, traces, and SLO/SLA management.',
+      'Security and compliance integration across build, deploy, and runtime systems.',
+      'Incident management and resilience engineering experience in production environments.',
+    ],
+    qa: [
+      'Advanced test design and automation strategy across UI, API, integration, and non-functional testing.',
+      'Proficiency with automation tooling and CI pipeline integration for continuous quality feedback.',
+      'Strong defect triage, root-cause analysis, and prevention-oriented quality practices.',
+      'Performance, security, and reliability testing familiarity beyond functional scope.',
+      'Quality metrics ownership with release-readiness criteria and risk reporting.',
+      'Collaboration skills to embed quality early in planning and implementation cycles.',
+    ],
+    management: [
+      'Strong planning and prioritization skills using delivery metrics and impact tradeoffs.',
+      'Stakeholder management capability across product, engineering, operations, and leadership.',
+      'Risk and dependency management discipline for complex multi-team initiatives.',
+      'Data-informed decision making with clear KPI ownership and outcome tracking.',
+      'Communication excellence in reporting progress, blockers, and strategic recommendations.',
+      'Process improvement mindset with repeatable frameworks for execution quality.',
+    ],
+    general: [
+      'Role-specific technical depth plus evidence of delivery in real production contexts.',
+      'Structured problem-solving and decision-making under ambiguity and changing priorities.',
+      'Ownership mindset for measurable outcomes, quality standards, and continuous improvement.',
+      'Cross-functional communication skills with clear stakeholder alignment.',
+      'Execution discipline: planning, prioritization, and risk mitigation.',
+      'Ability to learn and adapt quickly to new tools, domain constraints, and business goals.',
+    ],
+  };
+  const base = trackMap[track] || trackMap.general;
+  const seniorExtras = [
+    'System design and architecture decision-making for scale, reliability, and maintainability.',
+    'Technical leadership experience: mentoring, code-review standards, and cross-team alignment.',
+    'Ability to influence roadmap-level priorities using technical and business tradeoff analysis.',
+  ];
+  return isSenior ? [...base, ...seniorExtras] : base;
+}
+
+function normalizeCareerGuidanceRoles(raw, profile = {}, interests = []) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const asArray = (value) => (Array.isArray(value) ? value : []);
+  const rows = [
+    ...asArray(source?.roles),
+    ...asArray(source?.guidance),
+    ...asArray(source?.recommendations),
+    ...asArray(source?.jobs),
+    ...asArray(source?.data?.roles),
+    ...asArray(source?.data?.guidance),
+    ...asArray(source?.data?.recommendations),
+    ...asArray(source?.data?.jobs),
+    ...asArray(source),
+  ];
+  const out = [];
+  const seen = new Set();
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue;
+    const title = String(
+      row?.title
+      || row?.jobTitle
+      || row?.role
+      || row?.name
+      || row?.position
+      || ''
+    ).replace(/\s+/g, ' ').trim().slice(0, 120);
+    if (!title) continue;
+    const key = title.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const seniorRole = isSeniorCareerRoleTitle(title);
+    const roleSummaryRaw = String(
+      row?.roleSummary
+      || row?.summary
+      || row?.reason
+      || row?.description
+      || 'This role aligns with your profile and current growth goals.'
+    ).replace(/\s+/g, ' ').trim();
+    const roleSummary = (
+      seniorRole && !/\b(architecture|strategy|lead|stakeholder|scal|reliab|mentor|ownership)\b/i.test(roleSummaryRaw)
+        ? `${roleSummaryRaw} Senior-level scope includes architecture decisions, delivery leadership, and quality ownership.`
+        : roleSummaryRaw
+    ).slice(0, 420);
+
+    const baseResponsibilities = normalizeInterviewList(
+      row?.responsibilities
+      || row?.responsibility
+      || row?.duties
+      || row?.tasks
+      || row?.keyResponsibilities
+      || row?.whatYouDo
+      || [],
+      10,
+      220
+    );
+    const baseRequirements = normalizeInterviewList(
+      row?.requirements
+      || row?.requirement
+      || row?.qualifications
+      || row?.mustHave
+      || row?.skills
+      || row?.entryRequirements
+      || [],
+      10,
+      220
+    );
+    const responsibilitiesBoost = careerGuidanceResponsibilityBoost(title);
+    const requirementsBoost = careerGuidanceRequirementBoost(title);
+    const responsibilities = isWeakCareerGuidanceList(baseResponsibilities, 'responsibilities', seniorRole)
+      ? mergeCareerGuidanceItems(responsibilitiesBoost, baseResponsibilities, 8)
+      : mergeCareerGuidanceItems(baseResponsibilities, responsibilitiesBoost, 8);
+    const requirements = isWeakCareerGuidanceList(baseRequirements, 'requirements', seniorRole)
+      ? mergeCareerGuidanceItems(requirementsBoost, baseRequirements, 8)
+      : mergeCareerGuidanceItems(baseRequirements, requirementsBoost, 8);
+    const sources = normalizeCareerGuidanceSources(
+      row?.sources
+      || row?.references
+      || row?.links
+      || row?.citations
+      || [],
+      title
+    );
+
+    out.push({
+      id: String(row?.id || `career-${slugifyCareerGuideId(title, out.length + 1)}`).slice(0, 96),
+      title,
+      roleSummary: roleSummary || 'This role can be a strong next step from your current profile.',
+      responsibilities,
+      requirements,
+      sources,
+    });
+    if (out.length >= 8) break;
+  }
+
+  if (out.length) return out.slice(0, 6);
+
+  const hints = normalizeInterviewList(
+    [
+      ...normalizeInterviewList(interests, 8, 80),
+      ...normalizeInterviewList(profile?.skills, 8, 80),
+      String(profile?.learningGoal || '').trim(),
+      String(profile?.headline || '').trim(),
+    ],
+    8,
+    80
+  );
+  const titles = [];
+  const titleSeen = new Set();
+  for (const hint of hints) {
+    const cleaned = String(hint || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    if (!cleaned) continue;
+    const title = cleaned.length > 2 ? cleaned : '';
+    if (!title) continue;
+    const key = title.toLowerCase();
+    if (titleSeen.has(key)) continue;
+    titleSeen.add(key);
+    titles.push(title);
+    if (titles.length >= 4) break;
+  }
+  if (!titles.length) {
+    titles.push('Operations Associate', 'Customer Success Specialist', 'QA Engineer');
+  }
+
+  return titles.map((title, idx) => ({
+    id: `career-${slugifyCareerGuideId(title, idx + 1)}`,
+    title,
+    roleSummary: isSeniorCareerRoleTitle(title)
+      ? 'Potential match based on your CV and interests with senior-level ownership expectations.'
+      : 'Potential match based on your CV and interests.',
+    responsibilities: mergeCareerGuidanceItems(
+      careerGuidanceResponsibilityBoost(title),
+      [`Deliver practical outcomes expected for ${title}.`],
+      8
+    ),
+    requirements: mergeCareerGuidanceItems(
+      careerGuidanceRequirementBoost(title),
+      ['Evidence of capability through projects or work history.'],
+      8
+    ),
+    sources: normalizeCareerGuidanceSources([], title),
+  })).slice(0, 4);
 }
 
 function normalizeInterviewRecommendations(raw, profile = {}) {
@@ -6318,22 +7789,27 @@ function fallbackInterviewFeedbackByLanguage(targetLanguage = 'en-US') {
 function normalizeInterviewFeedback(raw, questionId, targetLanguage = 'en-US') {
   const riskFlags = normalizeInterviewList(raw?.riskFlags || raw?.redFlags || [], 8, 140);
   const fallback = fallbackInterviewFeedbackByLanguage(targetLanguage);
-  const feedback = String(raw?.feedback || raw?.coaching || '').trim().slice(0, 2000);
-  const sampleResponse = String(raw?.sampleResponse || raw?.exampleAnswer || '').trim().slice(0, 2200);
-  const toneFeedback = String(raw?.toneFeedback || raw?.tone || '').trim().slice(0, 800);
-  const grammarFeedback = String(raw?.grammarFeedback || raw?.grammar || '').trim().slice(0, 800);
-  const pronunciationFeedback = String(raw?.pronunciationFeedback || raw?.pronunciation || '').trim().slice(0, 800);
+  const fallbackFeedback = repairLikelyMojibakeText(String(fallback.feedback || '').trim()).slice(0, 2000);
+  const fallbackSampleResponse = repairLikelyMojibakeText(String(fallback.sampleResponse || '').trim()).slice(0, 2200);
+  const fallbackToneFeedback = repairLikelyMojibakeText(String(fallback.toneFeedback || '').trim()).slice(0, 800);
+  const fallbackGrammarFeedback = repairLikelyMojibakeText(String(fallback.grammarFeedback || '').trim()).slice(0, 800);
+  const fallbackPronunciationFeedback = repairLikelyMojibakeText(String(fallback.pronunciationFeedback || '').trim()).slice(0, 800);
+  const feedback = repairLikelyMojibakeText(String(raw?.feedback || raw?.coaching || '').trim()).slice(0, 2000);
+  const sampleResponse = repairLikelyMojibakeText(String(raw?.sampleResponse || raw?.exampleAnswer || '').trim()).slice(0, 2200);
+  const toneFeedback = repairLikelyMojibakeText(String(raw?.toneFeedback || raw?.tone || '').trim()).slice(0, 800);
+  const grammarFeedback = repairLikelyMojibakeText(String(raw?.grammarFeedback || raw?.grammar || '').trim()).slice(0, 800);
+  const pronunciationFeedback = repairLikelyMojibakeText(String(raw?.pronunciationFeedback || raw?.pronunciation || '').trim()).slice(0, 800);
   const forceLocalizedFallback = shouldForceLocalizedTextFallback(
     `${feedback}\n${sampleResponse}\n${toneFeedback}\n${grammarFeedback}\n${pronunciationFeedback}`,
     targetLanguage
   );
   return {
     questionId: String(questionId || raw?.questionId || ''),
-    feedback: forceLocalizedFallback ? fallback.feedback : (feedback || fallback.feedback),
-    sampleResponse: forceLocalizedFallback ? fallback.sampleResponse : (sampleResponse || fallback.sampleResponse),
-    toneFeedback: forceLocalizedFallback ? fallback.toneFeedback : (toneFeedback || fallback.toneFeedback),
-    grammarFeedback: forceLocalizedFallback ? fallback.grammarFeedback : (grammarFeedback || fallback.grammarFeedback),
-    pronunciationFeedback: forceLocalizedFallback ? fallback.pronunciationFeedback : (pronunciationFeedback || fallback.pronunciationFeedback),
+    feedback: forceLocalizedFallback ? fallbackFeedback : (feedback || fallbackFeedback),
+    sampleResponse: forceLocalizedFallback ? fallbackSampleResponse : (sampleResponse || fallbackSampleResponse),
+    toneFeedback: forceLocalizedFallback ? fallbackToneFeedback : (toneFeedback || fallbackToneFeedback),
+    grammarFeedback: forceLocalizedFallback ? fallbackGrammarFeedback : (grammarFeedback || fallbackGrammarFeedback),
+    pronunciationFeedback: forceLocalizedFallback ? fallbackPronunciationFeedback : (pronunciationFeedback || fallbackPronunciationFeedback),
     riskFlags,
     score: Math.max(1, Math.min(10, Number(raw?.score || 6))),
   };
@@ -6406,21 +7882,26 @@ function fallbackInterviewFinalReviewByLanguage(targetLanguage = 'en-US') {
 
 function normalizeInterviewFinalReview(raw, targetLanguage = 'en-US') {
   const fallback = fallbackInterviewFinalReviewByLanguage(targetLanguage);
-  const summary = String(raw?.summary || '').trim().slice(0, 2200);
-  const strengths = normalizeInterviewList(raw?.strengths || fallback.strengths || [], 12, 220);
-  const improvements = normalizeInterviewList(raw?.improvements || raw?.weaknesses || fallback.improvements || [], 14, 220);
-  const hiringRiskNotes = normalizeInterviewList(raw?.hiringRiskNotes || raw?.riskNotes || fallback.hiringRiskNotes || [], 10, 220);
-  const nextSteps = normalizeInterviewList(raw?.nextSteps || fallback.nextSteps || [], 12, 220);
+  const fallbackSummary = repairLikelyMojibakeText(String(fallback.summary || '').trim()).slice(0, 2200);
+  const fallbackStrengths = normalizeInterviewList(fallback.strengths || [], 12, 220);
+  const fallbackImprovements = normalizeInterviewList(fallback.improvements || [], 14, 220);
+  const fallbackRiskNotes = normalizeInterviewList(fallback.hiringRiskNotes || [], 10, 220);
+  const fallbackNextSteps = normalizeInterviewList(fallback.nextSteps || [], 12, 220);
+  const summary = repairLikelyMojibakeText(String(raw?.summary || '').trim()).slice(0, 2200);
+  const strengths = normalizeInterviewList(raw?.strengths || fallbackStrengths || [], 12, 220);
+  const improvements = normalizeInterviewList(raw?.improvements || raw?.weaknesses || fallbackImprovements || [], 14, 220);
+  const hiringRiskNotes = normalizeInterviewList(raw?.hiringRiskNotes || raw?.riskNotes || fallbackRiskNotes || [], 10, 220);
+  const nextSteps = normalizeInterviewList(raw?.nextSteps || fallbackNextSteps || [], 12, 220);
   const forceLocalizedFallback = shouldForceLocalizedTextFallback(
     [summary, ...strengths, ...improvements, ...hiringRiskNotes, ...nextSteps].join('\n'),
     targetLanguage
   );
   return {
-    summary: forceLocalizedFallback ? fallback.summary : (summary || fallback.summary),
-    strengths: forceLocalizedFallback ? fallback.strengths : strengths,
-    improvements: forceLocalizedFallback ? fallback.improvements : improvements,
-    hiringRiskNotes: forceLocalizedFallback ? fallback.hiringRiskNotes : hiringRiskNotes,
-    nextSteps: forceLocalizedFallback ? fallback.nextSteps : nextSteps,
+    summary: forceLocalizedFallback ? fallbackSummary : (summary || fallbackSummary),
+    strengths: forceLocalizedFallback ? fallbackStrengths : strengths,
+    improvements: forceLocalizedFallback ? fallbackImprovements : improvements,
+    hiringRiskNotes: forceLocalizedFallback ? fallbackRiskNotes : hiringRiskNotes,
+    nextSteps: forceLocalizedFallback ? fallbackNextSteps : nextSteps,
   };
 }
 
@@ -6523,57 +8004,13 @@ function fallbackStepContent(type, stepTitle, moduleTitle, yt, reason = 'provide
   }
 
   if (type === 'QUIZ') {
+    const fallbackQuizCount = isFinalModuleQuizTitle(stepTitle) ? 20 : 4;
     return withFallbackMeta(validateStepContent('QUIZ', {
       type: 'QUIZ',
       title: stepTitle,
       lessonText: localFallbackIntro,
       data: {
-        questions: [
-          {
-            question: `What is the best first step to learn ${topic}?`,
-            options: [
-              `Understand the core concept and one practical example.`,
-              `Skip basics and go directly to advanced topics.`,
-              `Memorize terms without context.`,
-              `Ignore feedback and self-checking.`,
-            ],
-            correctAnswer: 0,
-            explanation: `Start with fundamentals and application to build durable understanding.`,
-          },
-          {
-            question: `Which behavior improves mastery of ${topic}?`,
-            options: [
-              `Practice with small, real scenarios.`,
-              `Avoid reflection after exercises.`,
-              `Change topics every few minutes.`,
-              `Rely only on guessing.`,
-            ],
-            correctAnswer: 0,
-            explanation: `Small scenario-based practice reinforces learning.`,
-          },
-          {
-            question: `A common mistake in ${topic} learning is:`,
-            options: [
-              `Using examples and feedback loops.`,
-              `Connecting concept to action.`,
-              `Learning definitions without applying them.`,
-              `Reviewing previous lesson notes.`,
-            ],
-            correctAnswer: 2,
-            explanation: `Application is essential; definition-only learning is fragile.`,
-          },
-          {
-            question: `What should you do after studying ${topic}?`,
-            options: [
-              `Write one takeaway and one action you can apply.`,
-              `Close the lesson immediately.`,
-              `Skip practice tasks.`,
-              `Avoid checking your understanding.`,
-            ],
-            correctAnswer: 0,
-            explanation: `Reflection plus action creates stronger retention.`,
-          },
-        ]
+        questions: buildFallbackQuizQuestions(topic, fallbackQuizCount),
       }
     }));
   }
@@ -6629,13 +8066,16 @@ function fallbackStepContent(type, stepTitle, moduleTitle, yt, reason = 'provide
       lessonText: 'Complete each blank with the best matching code token.',
       data: {
         codeBuilder: {
-          avatarInstruction: 'Fill each blank with the correct option.',
+          avatarInstruction: 'Follow each mini-goal and choose the token that makes the line true.',
+          goal: 'Complete each mini-goal: print 10, set buyer to "Bob", increase player score by 8, and set drink to "water".',
+          expectedOutput: '10 | Bob bought 2 tickets | score +8 | water',
           lines: [
-            { content: 'def greet(name):', correctValue: '' },
-            { content: '    return ___', correctValue: '"Hello, " + name' },
-            { content: 'print(greet(___))', correctValue: '"Nexus"' },
+            { content: 'print(___)  # target: 10', correctValue: '10' },
+            { content: 'receipt = ___ + " bought 2 tickets"', correctValue: '"Bob"' },
+            { content: 'player_score = player_score + ___', correctValue: '8' },
+            { content: 'drink = ___', correctValue: '"water"' },
           ],
-          options: ['"Hello, " + name', '"Nexus"', '42', 'None']
+          options: ['10', '"Bob"', '8', '"water"', '2', '"Alice"', 'None', 'False']
         }
       }
     }));
@@ -6834,7 +8274,7 @@ async function handleApi(req, res, pathname) {
       const [assessmentResp, confidenceResp, eventResp] = await Promise.all([
         supabaseRestRequest(`assessment_attempts?${buildParams('phase,score_pct').toString()}`, { method: 'GET' }),
         supabaseRestRequest(`confidence_surveys?${buildParams('phase,score').toString()}`, { method: 'GET' }),
-        supabaseRestRequest(`progress_events?${buildParams('event_type,course_id,created_at').toString()}`, { method: 'GET' }),
+        supabaseRestRequest(`progress_events?${buildParams('event_type,course_id,created_at,payload').toString()}`, { method: 'GET' }),
       ]);
 
       if (assessmentResp.ok && confidenceResp.ok && eventResp.ok) {
@@ -6844,6 +8284,7 @@ async function handleApi(req, res, pathname) {
           type: String(row?.event_type || ''),
           courseId: String(row?.course_id || ''),
           date: String(row?.created_at || ''),
+          payload: row?.payload && typeof row.payload === 'object' ? row.payload : {},
           accountId,
         }));
 
@@ -6857,13 +8298,25 @@ async function handleApi(req, res, pathname) {
         const avg = (arr) => arr.length ? (arr.reduce((acc, n) => acc + Number(n || 0), 0) / arr.length) : 0;
         const preAvg = avg(pretests.map((x) => safePercent(x?.score_pct)));
         const postAvg = avg(posttests.map((x) => safePercent(x?.score_pct)));
+        const hasPreAssessment = pretests.length > 0;
+        const hasPostAssessment = posttests.length > 0;
 
-        const preConf = avg(conf.filter((x) => x.phase === 'pre').map((x) => Number(x.score || 0)));
-        const postConf = avg(conf.filter((x) => x.phase === 'post').map((x) => Number(x.score || 0)));
+        const preConfRows = conf.filter((x) => x.phase === 'pre' && Number.isFinite(Number(x.score)));
+        const postConfRows = conf.filter((x) => x.phase === 'post' && Number.isFinite(Number(x.score)));
+        const preConf = avg(preConfRows.map((x) => Number(x.score || 0)));
+        const postConf = avg(postConfRows.map((x) => Number(x.score || 0)));
 
         const started = events.filter((e) => e.type === 'course_started').length;
         const completed = events.filter((e) => e.type === 'course_completed').length;
-        const completionRate = started ? Math.round((completed / started) * 100) : 0;
+        const eventCompletionRate = started ? Math.round((completed / started) * 100) : 0;
+        const payloadCompletionValues = events
+          .map((e) => Number(e?.payload?.completionRate))
+          .filter((value) => Number.isFinite(value))
+          .map((value) => Math.max(0, Math.min(100, Number(value))));
+        const payloadCompletionRate = payloadCompletionValues.length
+          ? Math.round(Math.max(...payloadCompletionValues))
+          : 0;
+        const completionRate = Math.max(eventCompletionRate, payloadCompletionRate);
 
         const activeDays = new Set(events.filter((e) => e.type === 'daily_active').map((e) => String(e.date || '').slice(0, 10))).size;
         const usersReached = events.length ? 1 : 0;
@@ -6892,8 +8345,12 @@ async function handleApi(req, res, pathname) {
 
         const dashboard = {
           usersReached,
-          skillGainPp: Math.round((postAvg - preAvg) * 10) / 10,
-          confidenceGain: Math.round((postConf - preConf) * 10) / 10,
+          skillGainPp: (hasPreAssessment && hasPostAssessment)
+            ? (Math.round((postAvg - preAvg) * 10) / 10)
+            : 0,
+          confidenceGain: (preConfRows.length && postConfRows.length)
+            ? (Math.round((postConf - preConf) * 10) / 10)
+            : 0,
           completionRate,
           avgTimeToCompletionMins,
           d7Retention: activeDays >= 7 ? 1 : (activeDays > 0 ? Math.round((activeDays / 7) * 100) / 100 : 0),
@@ -6909,13 +8366,25 @@ async function handleApi(req, res, pathname) {
     const avg = (arr) => arr.length ? (arr.reduce((acc, n) => acc + Number(n || 0), 0) / arr.length) : 0;
     const preAvg = avg(pretests.map((x) => safePercent(x.scorePct)));
     const postAvg = avg(posttests.map((x) => safePercent(x.scorePct)));
+    const hasPreAssessment = pretests.length > 0;
+    const hasPostAssessment = posttests.length > 0;
 
-    const preConf = avg(conf.filter((x) => x.phase === 'pre').map((x) => Number(x.score || 0)));
-    const postConf = avg(conf.filter((x) => x.phase === 'post').map((x) => Number(x.score || 0)));
+    const preConfRows = conf.filter((x) => x.phase === 'pre' && Number.isFinite(Number(x.score)));
+    const postConfRows = conf.filter((x) => x.phase === 'post' && Number.isFinite(Number(x.score)));
+    const preConf = avg(preConfRows.map((x) => Number(x.score || 0)));
+    const postConf = avg(postConfRows.map((x) => Number(x.score || 0)));
 
     const started = events.filter((e) => e.type === 'course_started').length;
     const completed = events.filter((e) => e.type === 'course_completed').length;
-    const completionRate = started ? Math.round((completed / started) * 100) : 0;
+    const eventCompletionRate = started ? Math.round((completed / started) * 100) : 0;
+    const payloadCompletionValues = events
+      .map((e) => Number(e?.payload?.completionRate))
+      .filter((value) => Number.isFinite(value))
+      .map((value) => Math.max(0, Math.min(100, Number(value))));
+    const payloadCompletionRate = payloadCompletionValues.length
+      ? Math.round(Math.max(...payloadCompletionValues))
+      : 0;
+    const completionRate = Math.max(eventCompletionRate, payloadCompletionRate);
 
     const activeDays = new Set(events.filter((e) => e.type === 'daily_active').map((e) => String(e.date || '').slice(0, 10))).size;
     const usersReached = new Set(events.map((e) => e.accountId)).size;
@@ -6944,8 +8413,12 @@ async function handleApi(req, res, pathname) {
 
     const dashboard = {
       usersReached,
-      skillGainPp: Math.round((postAvg - preAvg) * 10) / 10,
-      confidenceGain: Math.round((postConf - preConf) * 10) / 10,
+      skillGainPp: (hasPreAssessment && hasPostAssessment)
+        ? (Math.round((postAvg - preAvg) * 10) / 10)
+        : 0,
+      confidenceGain: (preConfRows.length && postConfRows.length)
+        ? (Math.round((postConf - preConf) * 10) / 10)
+        : 0,
       completionRate,
       avgTimeToCompletionMins,
       d7Retention: activeDays >= 7 ? 1 : (activeDays > 0 ? Math.round((activeDays / 7) * 100) / 100 : 0),
@@ -6959,11 +8432,27 @@ async function handleApi(req, res, pathname) {
     const buildCourseMetrics = (pretests, posttests, conf, events) => {
       const preAvg = avg((pretests || []).map((x) => safePercent(x?.scorePct ?? x?.score_pct)));
       const postAvg = avg((posttests || []).map((x) => safePercent(x?.scorePct ?? x?.score_pct)));
-      const preConf = avg((conf || []).filter((x) => String(x?.phase || '') === 'pre').map((x) => Number(x?.score || 0)));
-      const postConf = avg((conf || []).filter((x) => String(x?.phase || '') === 'post').map((x) => Number(x?.score || 0)));
+      const hasPreAssessment = (pretests || []).length > 0;
+      const hasPostAssessment = (posttests || []).length > 0;
+      const preConfRows = (conf || []).filter((x) =>
+        String(x?.phase || '') === 'pre' && Number.isFinite(Number(x?.score))
+      );
+      const postConfRows = (conf || []).filter((x) =>
+        String(x?.phase || '') === 'post' && Number.isFinite(Number(x?.score))
+      );
+      const preConf = avg(preConfRows.map((x) => Number(x?.score || 0)));
+      const postConf = avg(postConfRows.map((x) => Number(x?.score || 0)));
       const started = (events || []).filter((e) => e.type === 'course_started').length;
       const completed = (events || []).filter((e) => e.type === 'course_completed').length;
-      const completionRate = started ? Math.round((completed / started) * 100) : 0;
+      const eventCompletionRate = started ? Math.round((completed / started) * 100) : 0;
+      const payloadCompletionValues = (events || [])
+        .map((e) => Number(e?.payload?.completionRate))
+        .filter((value) => Number.isFinite(value))
+        .map((value) => Math.max(0, Math.min(100, Number(value))));
+      const payloadCompletionRate = payloadCompletionValues.length
+        ? Math.round(Math.max(...payloadCompletionValues))
+        : 0;
+      const completionRate = Math.max(eventCompletionRate, payloadCompletionRate);
 
       const startsByCourse = new Map();
       for (const e of events || []) {
@@ -6989,8 +8478,12 @@ async function handleApi(req, res, pathname) {
       const activeDays = new Set((events || []).filter((e) => e.type === 'daily_active').map((e) => String(e.date || '').slice(0, 10))).size;
       return {
         usersReached: (events || []).length ? 1 : 0,
-        skillGainPp: Math.round((postAvg - preAvg) * 10) / 10,
-        confidenceGain: Math.round((postConf - preConf) * 10) / 10,
+        skillGainPp: (hasPreAssessment && hasPostAssessment)
+          ? (Math.round((postAvg - preAvg) * 10) / 10)
+          : 0,
+        confidenceGain: (preConfRows.length && postConfRows.length)
+          ? (Math.round((postConf - preConf) * 10) / 10)
+          : 0,
         completionRate,
         avgTimeToCompletionMins,
         d7Retention: activeDays >= 7 ? 1 : (activeDays > 0 ? Math.round((activeDays / 7) * 100) / 100 : 0),
@@ -7157,13 +8650,24 @@ async function handleApi(req, res, pathname) {
     const viewerId = String(query.get('accountId') || '').trim();
     if (supabaseDbEnabled() && isUuid(courseId)) {
       try {
-        const params = new URLSearchParams();
-        params.set('select', 'id,course_id,owner_id,title,description,language,segment,moderation_status,created_at,courses!inner(visibility,moderation_status)');
-        params.set('course_id', `eq.${courseId}`);
-        params.set('courses.visibility', 'eq.public');
-        params.set('moderation_status', 'neq.hidden');
-        params.set('limit', '1');
-        const r = await supabaseRestRequest(`course_public_posts?${params.toString()}`, { method: 'GET' });
+        const fetchBy = async (mode) => {
+          const params = new URLSearchParams();
+          params.set('select', 'id,course_id,owner_id,title,description,language,segment,moderation_status,created_at,courses!inner(visibility,moderation_status)');
+          params.set('course_id', `eq.${courseId}`);
+          params.set('moderation_status', 'neq.hidden');
+          params.set('limit', '1');
+          if (mode === 'public') {
+            params.set('courses.visibility', 'eq.public');
+          } else if (mode === 'owner' && isUuid(viewerId)) {
+            params.set('owner_id', `eq.${viewerId}`);
+          }
+          return await supabaseRestRequest(`course_public_posts?${params.toString()}`, { method: 'GET' });
+        };
+
+        let r = await fetchBy('public');
+        if ((!r.ok || !Array.isArray(r.json) || !r.json[0]) && isUuid(viewerId)) {
+          r = await fetchBy('owner');
+        }
         if (r.ok && Array.isArray(r.json) && r.json[0]) {
           const row = r.json[0];
           const postId = String(row?.id || '');
@@ -7178,7 +8682,14 @@ async function handleApi(req, res, pathname) {
         // fallback to local DB
       }
     }
-    const post = db.publicPosts.find((p) => p.courseId === courseId && p.visibility === 'public' && p.moderationStatus !== 'hidden') || null;
+    const post = db.publicPosts.find((p) => (
+      p.courseId === courseId
+      && p.moderationStatus !== 'hidden'
+      && (
+        p.visibility === 'public'
+        || (viewerId && String(p.ownerId || '') === String(viewerId || ''))
+      )
+    )) || null;
     if (!post) return sendJson(res, 404, { error: 'course not found' });
     return sendJson(res, 200, { ok: true, data: withLocalPostCounts(post, db, viewerId) });
   }
@@ -8608,7 +10119,7 @@ async function handleApi(req, res, pathname) {
       }
       if (finalType === 'VIDEO' && !yt) {
         if (requestPolicy.strictAi) {
-          return sendJson(res, 503, { error: 'No strongly relevant embeddable video was found for this step. Retry or switch model/provider.' });
+          return sendJson(res, 503, { error: 'Video embedding failed: no embeddable public YouTube video matched this lesson topic.' });
         }
         let fallback = fallbackStepContent('VIDEO', stepTitle, moduleTitle, null, 'no_relevant_video');
         fallback = await enforcePreferredLocale(
@@ -8620,7 +10131,7 @@ async function handleApi(req, res, pathname) {
         return sendJson(res, 200, {
           ok: true,
           data: fallback,
-          warning: 'No strongly relevant video was found. Showing text-first fallback for this step.',
+          warning: 'No embeddable public YouTube video matched this lesson topic. Showing text-first fallback for this step.',
         });
       }
       validated = await enforcePreferredLocale(
@@ -8665,6 +10176,14 @@ async function handleApi(req, res, pathname) {
       const content = body?.content;
       const editPrompt = String(body?.editPrompt || '').trim();
       if (!content || !editPrompt) return sendJson(res, 400, { error: 'content and editPrompt required' });
+
+      const directEdit = await applyDirectTutorEdit(content, editPrompt);
+      if (directEdit) {
+        return sendJson(res, 200, {
+          ok: true,
+          data: directEdit,
+        });
+      }
 
       const key = sha256(`edit|${JSON.stringify(content)}|${editPrompt}|${JSON.stringify(router)}`);
       const prompt = promptTutorEdit(content, editPrompt);
@@ -8733,6 +10252,173 @@ async function handleApi(req, res, pathname) {
       });
     }
 
+    if (pathname === '/api/profile/career-guidance') {
+      const profile = body?.profile && typeof body.profile === 'object' ? body.profile : {};
+      const interests = normalizeInterviewList(body?.interests, 12, 80);
+      const skills = normalizeInterviewList(profile?.skills, 20, 80);
+      const experiences = Array.isArray(profile?.experience) ? profile.experience.slice(0, 8) : [];
+      const education = Array.isArray(profile?.education) ? profile.education.slice(0, 5) : [];
+      const certs = normalizeInterviewList(profile?.certifications, 10, 80);
+      const learningGoal = String(profile?.learningGoal || '').trim();
+      const region = String(profile?.region || profileContext?.region || '').trim() || 'ASEAN';
+      const preferredLanguage = String(profile?.preferredLanguage || profileContext?.preferredLanguage || 'en').trim();
+      const profileText = [
+        `Name: ${String(profile?.fullName || '').trim() || 'N/A'}`,
+        `Headline: ${String(profile?.headline || '').trim() || 'N/A'}`,
+        `Summary: ${String(profile?.summary || '').trim() || 'N/A'}`,
+        `Learning goal: ${learningGoal || 'N/A'}`,
+        `Region: ${region}`,
+        `Interests: ${interests.join(', ') || 'N/A'}`,
+        `Skills: ${skills.join(', ') || 'N/A'}`,
+        `Experience: ${experiences.map((item) => `${String(item?.role || '').trim()} @ ${String(item?.organization || '').trim()}`).filter(Boolean).join(' | ') || 'N/A'}`,
+        `Education: ${education.map((item) => `${String(item?.program || '').trim()} @ ${String(item?.institution || '').trim()}`).filter(Boolean).join(' | ') || 'N/A'}`,
+        `Certifications: ${certs.join(', ') || 'N/A'}`,
+      ].join('\n');
+      const prompt = `Return ONLY valid JSON (no markdown, no extra text).
+
+You are a labor-market aware career coach.
+Generate 4-6 personalized career guidance role cards from the candidate profile.
+Prioritize realistic, current-market roles aligned to readiness.
+For each role, provide 5-8 responsibilities and 6-10 requirements.
+Requirements must reflect real hiring expectations, not only what is already listed in the candidate CV.
+If a role includes Senior/Lead/Principal/Manager scope, include architecture/system design, performance, testing strategy, security, CI/CD or observability, stakeholder communication, and mentoring/leadership expectations.
+Avoid generic bullets like "proven experience" without concrete capability detail.
+Each role MUST include at least 2 credible source links. Prefer official labor-market references (BLS, O*NET, government job outlook pages, reputable professional bodies). Do not invent broken links.
+
+Candidate profile:
+${profileText}
+
+Output language: ${preferredLanguage}
+
+JSON shape:
+{
+  "roles": [
+    {
+      "id": string,
+      "title": string,
+      "roleSummary": string,
+      "responsibilities": [string],
+      "requirements": [string],
+      "sources": [{ "label": string, "url": string }]
+    }
+  ]
+}`;
+      const careerRouter = {
+        mode: 'manual',
+        provider: 'mistral',
+        model: 'open-mistral-nemo',
+      };
+      const keyBase = `career-guidance|${accountId}|${sha256(profileText)}|${preferredLanguage}|mistral|open-mistral-nemo`;
+      const raw = await routeJsonWithRepair(careerRouter, prompt, keyBase, {
+        passes: 2,
+        retryDelayMs: 900,
+        maxTotalMs: 32000,
+        throwOnError: true,
+        routeOptions: {
+          skipCache: requestPolicy.noCache,
+          bypassBreaker: requestPolicy.strictAi,
+          maxTotalMs: 30000,
+          maxAttempts: 6,
+        },
+      });
+      const roles = normalizeCareerGuidanceRoles(raw, profile, interests);
+      return sendJson(res, 200, {
+        ok: true,
+        data: roles,
+        ...(raw ? {} : { warning: 'Using fallback career guidance because AI output was unavailable.' }),
+      });
+    }
+
+    if (pathname === '/api/profile/career-guidance/role') {
+      const roleTitle = String(body?.roleTitle || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+      if (!roleTitle) return sendJson(res, 400, { error: 'roleTitle required' });
+      const profile = body?.profile && typeof body.profile === 'object' ? body.profile : {};
+      const interests = normalizeInterviewList(body?.interests, 12, 80);
+      const skills = normalizeInterviewList(profile?.skills, 20, 80);
+      const experiences = Array.isArray(profile?.experience) ? profile.experience.slice(0, 8) : [];
+      const education = Array.isArray(profile?.education) ? profile.education.slice(0, 5) : [];
+      const certs = normalizeInterviewList(profile?.certifications, 10, 80);
+      const learningGoal = String(profile?.learningGoal || '').trim();
+      const region = String(profile?.region || profileContext?.region || '').trim() || 'ASEAN';
+      const preferredLanguage = String(profile?.preferredLanguage || profileContext?.preferredLanguage || 'en').trim();
+      const profileText = [
+        `Target role: ${roleTitle}`,
+        `Name: ${String(profile?.fullName || '').trim() || 'N/A'}`,
+        `Headline: ${String(profile?.headline || '').trim() || 'N/A'}`,
+        `Summary: ${String(profile?.summary || '').trim() || 'N/A'}`,
+        `Learning goal: ${learningGoal || 'N/A'}`,
+        `Region: ${region}`,
+        `Interests: ${interests.join(', ') || 'N/A'}`,
+        `Skills: ${skills.join(', ') || 'N/A'}`,
+        `Experience: ${experiences.map((item) => `${String(item?.role || '').trim()} @ ${String(item?.organization || '').trim()}`).filter(Boolean).join(' | ') || 'N/A'}`,
+        `Education: ${education.map((item) => `${String(item?.program || '').trim()} @ ${String(item?.institution || '').trim()}`).filter(Boolean).join(' | ') || 'N/A'}`,
+        `Certifications: ${certs.join(', ') || 'N/A'}`,
+      ].join('\n');
+      const prompt = `Return ONLY valid JSON (no markdown, no extra text).
+
+You are a labor-market aware career coach.
+Analyze exactly ONE target role for this candidate.
+The output role title must stay as "${roleTitle}" (or a very close standard variant).
+Provide 5-8 responsibilities and 6-10 requirements for current hiring expectations.
+Requirements must include concrete capability depth beyond basic CV keywords.
+If the role is Senior/Lead/Principal/Manager, include architecture/system design, performance, testing strategy, security, CI/CD or observability, stakeholder communication, and mentoring/leadership expectations.
+Avoid generic bullets like "proven experience" without specific competency detail.
+Include at least 2 credible source links (BLS, O*NET, official labor statistics, reputable professional standards).
+
+Candidate profile:
+${profileText}
+
+Output language: ${preferredLanguage}
+
+JSON shape:
+{
+  "role": {
+    "id": string,
+    "title": string,
+    "roleSummary": string,
+    "responsibilities": [string],
+    "requirements": [string],
+    "sources": [{ "label": string, "url": string }]
+  }
+}`;
+      const careerRouter = {
+        mode: 'manual',
+        provider: 'mistral',
+        model: 'open-mistral-nemo',
+      };
+      const keyBase = `career-guidance-role|${accountId}|${sha256(profileText)}|${preferredLanguage}|mistral|open-mistral-nemo`;
+      const raw = await routeJsonWithRepair(careerRouter, prompt, keyBase, {
+        passes: 2,
+        retryDelayMs: 900,
+        maxTotalMs: 32000,
+        throwOnError: false,
+        routeOptions: {
+          skipCache: requestPolicy.noCache,
+          bypassBreaker: requestPolicy.strictAi,
+          maxTotalMs: 30000,
+          maxAttempts: 6,
+        },
+      });
+      const normalized = normalizeCareerGuidanceRoles(
+        (raw?.role && typeof raw.role === 'object')
+          ? [raw.role]
+          : raw,
+        profile,
+        [roleTitle, ...interests]
+      );
+      const selected = (
+        normalized.find((row) => String(row?.title || '').trim().toLowerCase() === roleTitle.toLowerCase())
+        || normalized[0]
+      );
+      if (!selected) {
+        return sendJson(res, 503, { error: `Could not analyze role guidance for "${roleTitle}" right now. Please try again.` });
+      }
+      return sendJson(res, 200, {
+        ok: true,
+        data: selected,
+      });
+    }
+
     if (pathname === '/api/interview/recommendations') {
       const profile = body?.profile && typeof body.profile === 'object' ? body.profile : {};
       const skills = normalizeInterviewList(profile?.skills, 20, 80);
@@ -8789,8 +10475,17 @@ JSON shape:
     if (pathname === '/api/interview/session') {
       const setup = body?.setup && typeof body.setup === 'object' ? body.setup : {};
       const profile = body?.profile && typeof body.profile === 'object' ? body.profile : {};
-      const requestedJobTitle = String(body?.jobTitle || '').replace(/\s+/g, ' ').trim();
+      const requestedJobTitleRaw = String(body?.jobTitle || '').replace(/\s+/g, ' ').trim();
+      const requestedJobTitle = stripInterviewPromptScaffolding(requestedJobTitleRaw);
       if (!requestedJobTitle) return sendJson(res, 400, { error: 'jobTitle required' });
+      const safetyError = getInterviewInputSafetyError(requestedJobTitleRaw);
+      if (safetyError) {
+        return sendJson(res, 422, {
+          ok: false,
+          error: safetyError,
+          code: 'INTERVIEW_INPUT_UNSAFE',
+        });
+      }
       const targetLanguage = String(setup?.targetLanguage || profileContext?.preferredLanguage || 'en-US').trim() || 'en-US';
       const targetLanguageLabel = interviewLanguageLabel(targetLanguage);
       const targetLanguageCode = normalizeInterviewLanguageCode(targetLanguage);
@@ -8799,6 +10494,7 @@ JSON shape:
       const questionFocus = ['mixed', 'behavioral', 'technical'].includes(questionFocusRaw) ? questionFocusRaw : 'mixed';
       const seniorityRaw = String(setup?.seniority || 'mid').trim().toLowerCase();
       const seniority = ['entry', 'mid', 'senior'].includes(seniorityRaw) ? seniorityRaw : 'mid';
+      const candidateName = inferInterviewCandidateName(profile);
       const roleTrack = inferInterviewRoleTrack(requestedJobTitle, profile);
       const questionPlan = pickInterviewQuestionVolume({
         seniority,
@@ -8808,8 +10504,15 @@ JSON shape:
         role: { jobTitle: requestedJobTitle },
       });
       const questionCount = Math.max(4, Math.min(12, Number(questionPlan?.targetCount) || (seniority === 'entry' ? 6 : (seniority === 'senior' ? 10 : 8))));
-      const minQuestionCount = Math.max(4, Math.min(questionCount, Number(questionPlan?.minCount) || (seniority === 'senior' ? 7 : (seniority === 'entry' ? 4 : 5))));
-      const roleBlueprint = fallbackInterviewRole(requestedJobTitle, profile, targetLanguage);
+      let minQuestionCount = Math.max(4, Math.min(questionCount, Number(questionPlan?.minCount) || (seniority === 'senior' ? 7 : (seniority === 'entry' ? 4 : 5))));
+      if (targetLanguageCode === 'my') {
+        minQuestionCount = Math.max(4, minQuestionCount - 2);
+      }
+      const roleBlueprint = fallbackInterviewRole(
+        requestedJobTitle,
+        profile,
+        isEnglishInterview ? targetLanguage : 'en-US'
+      );
       const debugRequestId = `intv-${sha256(`${accountId}|${requestedJobTitle}|${targetLanguage}|${Date.now()}|${Math.random()}`).slice(0, 12)}`;
       const attemptTrace = [];
       const addTrace = (step, data = {}) => {
@@ -8839,6 +10542,218 @@ JSON shape:
             }
           : {}
       );
+      const assessmentStyleEnabled = !/^(0|false|no|off)$/i.test(String(process.env.INTERVIEW_SESSION_ASSESSMENT_STYLE || '1').trim());
+      // Assessment-style flow is lighter/faster for English, but non-English quality is better in the full flow.
+      const useAssessmentStyleInterviewFlow = assessmentStyleEnabled && isEnglishInterview;
+      if (useAssessmentStyleInterviewFlow) {
+        const buildAssessmentStyleSession = (questions = [], roleOverride = null) => {
+          const roleSource = roleOverride && typeof roleOverride === 'object'
+            ? roleOverride
+            : {};
+          return {
+            role: {
+              jobTitle: String(roleSource?.jobTitle || requestedJobTitle).replace(/\s+/g, ' ').trim().slice(0, 120) || requestedJobTitle,
+              roleSummary: String(roleSource?.roleSummary || '').replace(/\s+/g, ' ').trim().slice(0, 600),
+            },
+            questions: Array.isArray(questions) ? questions : [],
+            generatedAt: nowIso(),
+          };
+        };
+        const extractAssessmentStyleRole = (source = {}) => {
+          const roleRaw = extractInterviewRoleRaw(source);
+          return {
+            jobTitle: String(roleRaw?.jobTitle || roleRaw?.title || requestedJobTitle).replace(/\s+/g, ' ').trim().slice(0, 120) || requestedJobTitle,
+            roleSummary: String(roleRaw?.roleSummary || roleRaw?.summary || '').replace(/\s+/g, ' ').trim().slice(0, 600),
+          };
+        };
+        const normalizeAssessmentStyleRows = (rawRows = [], language = 'en-US') => normalizeAiOnlyInterviewQuestions(rawRows, language, questionCount)
+          .map((row, idx) => ({
+            id: String(row?.id || `q${idx + 1}`).slice(0, 80),
+            question: enforceInterviewQuestionText(row?.question, language).slice(0, 500),
+            focus: String(row?.focus || 'general').replace(/\s+/g, ' ').trim().slice(0, 80) || 'general',
+          }))
+          .filter((row) => !!row.question);
+        const normalizeAssessmentStyleSession = (raw = {}, language = targetLanguage) => buildAssessmentStyleSession(
+          normalizeAssessmentStyleRows(raw?.questions ?? raw, language),
+          extractAssessmentStyleRole(raw?.role || raw)
+        );
+        const isAssessmentStyleSessionValid = (session = {}) => {
+          const rows = Array.isArray(session?.questions) ? session.questions : [];
+          if (rows.length < minQuestionCount) return false;
+          if (!isEnglishInterview && shouldForceLocalizedQuestionFallback(rows, targetLanguage)) return false;
+          const quality = evaluateAiOnlyInterviewQuestions(rows, requestedJobTitle, targetLanguage, minQuestionCount);
+          if (!quality?.ok) return false;
+          return true;
+        };
+        const localizeAssessmentStyleSession = async (session = {}, contextTag = 'primary') => {
+          if (isEnglishInterview) return session;
+          const roleNeedsLocalization = shouldForceLocalizedTextFallback(String(session?.role?.roleSummary || ''), targetLanguage);
+          const questionsNeedLocalization = shouldForceLocalizedQuestionFallback(session?.questions, targetLanguage);
+          if (!roleNeedsLocalization && !questionsNeedLocalization) return session;
+          try {
+            const localized = await localizeInterviewSessionQuestions(session, targetLanguage);
+            const normalized = normalizeAssessmentStyleSession(localized, targetLanguage);
+            if (shouldForceLocalizedQuestionFallback(normalized?.questions, targetLanguage)) return session;
+            return normalized;
+          } catch (e) {
+            addTrace('assessment-style-localize-fail', {
+              stage: contextTag,
+              status: Number(e?.status || 0),
+              message: String(e?.message || '').slice(0, 220),
+            });
+            return session;
+          }
+        };
+        const buildAssessmentStyleFallbackSession = async () => {
+          const nativeFallbackRows = targetLanguageCode === 'my'
+            ? [
+                { id: 'q1', question: `${requestedJobTitle} အဖြစ် တိုင်းတာနိုင်သော ရလဒ်ရခဲ့သည့် ပရောဂျက်တစ်ခုကို ရှင်းပြပါ?`, focus: 'execution' },
+                { id: 'q2', question: `${requestedJobTitle} အတွက် ပထမဆုံး စောင့်ကြည့်မည့် KPI က ဘာလဲ၊ ASEAN အတွက် ရက် ၉၀ အတွင်း လက်တွေ့ကျသော ရည်မှန်းချက်က ဘာလဲ?`, focus: 'execution' },
+                { id: 'q3', question: `${requestedJobTitle} အလုပ်တွင် အရေးပေါ်နှင့် အရေးကြီးအလုပ်များကို အရည်အသွေးမကျစေဘဲ ဘယ်လို ဦးစားပေးမလဲ?`, focus: 'scenario' },
+                { id: 'q4', question: `ဆင်တူသော အလုပ်တစ်ခုတွင် သင်လုပ်မိခဲ့သည့် အမှားတစ်ခုနှင့် ထို့နောက် ပြင်ဆင်ပြောင်းလဲခဲ့သည့် နည်းလမ်းကို ပြောပြပါ?`, focus: 'behavioral' },
+              ]
+            : [];
+          const fallbackBase = marketDrivenEnglishFallbackInterviewQuestions(
+            requestedJobTitle,
+            roleBlueprint,
+            profile,
+            {
+              questionFocus,
+              roleTrack,
+              seniority,
+              targetCount: Math.max(minQuestionCount, Math.min(questionCount, 8)),
+              candidateName: isEnglishInterview ? candidateName : '',
+            }
+          );
+          const fallbackRows = normalizeAiOnlyInterviewQuestions(fallbackBase, 'en-US', Math.max(minQuestionCount, Math.min(questionCount, 8)))
+            .map((row, idx) => ({
+              id: String(row?.id || `q${idx + 1}`),
+              question: enforceInterviewQuestionText(row?.question, 'en-US').slice(0, 500),
+              focus: String(row?.focus || 'general').replace(/\s+/g, ' ').trim().slice(0, 80) || 'general',
+            }))
+            .filter((row) => !!row.question);
+          const safeFallbackRows = fallbackRows.length
+            ? fallbackRows
+            : [
+                { id: 'q1', question: enforceInterviewQuestionText(`Describe a recent project where you delivered measurable results as ${requestedJobTitle}.`, 'en-US').slice(0, 500), focus: 'execution' },
+                { id: 'q2', question: enforceInterviewQuestionText(`How do you prioritize urgent and important tasks in ${requestedJobTitle} work while protecting quality?`, 'en-US').slice(0, 500), focus: 'scenario' },
+                { id: 'q3', question: enforceInterviewQuestionText(`Which skill should be strongest for ${requestedJobTitle} on day one, and why?`, 'en-US').slice(0, 500), focus: 'market' },
+                { id: 'q4', question: enforceInterviewQuestionText(`Tell me about a mistake you made in similar work and what you changed after that?`, 'en-US').slice(0, 500), focus: 'behavioral' },
+              ];
+          if (nativeFallbackRows.length) {
+            return buildAssessmentStyleSession(
+              nativeFallbackRows.map((row) => ({
+                ...row,
+                question: enforceInterviewQuestionText(row.question, targetLanguage).slice(0, 500),
+              })),
+              { jobTitle: requestedJobTitle, roleSummary: '' }
+            );
+          }
+          let session = buildAssessmentStyleSession(safeFallbackRows, { jobTitle: requestedJobTitle, roleSummary: '' });
+          session = await localizeAssessmentStyleSession(session, 'fallback');
+          if (!Array.isArray(session?.questions) || !session.questions.length) {
+            session = buildAssessmentStyleSession(safeFallbackRows, { jobTitle: requestedJobTitle, roleSummary: '' });
+          }
+          return session;
+        };
+        const generateAssessmentStyleInterview = async (strictRetry = false) => {
+          const prompt = promptInterviewQuestionsDirect({
+            requestedJobTitle,
+            targetLanguage,
+            targetLanguageLabel,
+            candidateName,
+            region: String(profile?.region || profileContext?.region || 'ASEAN').trim() || 'ASEAN',
+            profileSkills: profile?.skills,
+            profileExperience: profile?.experience,
+            questionFocus,
+            seniority,
+            questionCount,
+            strictRetry,
+          });
+          const keyBase = `interview-session|assessment-style|${strictRetry ? 'retry' : 'primary'}|${accountId}|${requestedJobTitle}|lang:${targetLanguage}|focus:${questionFocus}|seniority:${seniority}|${profileKey}|${JSON.stringify(router)}`;
+          const raw = await routeJsonWithRepair(router, prompt, keyBase, {
+            passes: 2,
+            retryDelayMs: 1200,
+            maxTotalMs: 30000,
+            throwOnError: requestPolicy.strictAi,
+            routeOptions: {
+              skipCache: requestPolicy.noCache,
+              bypassBreaker: requestPolicy.strictAi,
+              maxTotalMs: 28000,
+              maxAttempts: 5,
+            },
+          });
+          if (!raw || typeof raw !== 'object') {
+            const e = new Error('Invalid interview response');
+            e.status = 503;
+            throw e;
+          }
+          let session = normalizeAssessmentStyleSession(raw, targetLanguage);
+          session = await localizeAssessmentStyleSession(session, strictRetry ? 'retry' : 'primary');
+          if (!isAssessmentStyleSessionValid(session)) {
+            const e = new Error('Interview response failed validation');
+            e.status = 422;
+            throw e;
+          }
+          return session;
+        };
+
+        try {
+          const session = await generateAssessmentStyleInterview(false);
+          addTrace('assessment-style', { result: 'primary-ok', questionCount: session.questions.length });
+          return sendJson(res, 200, {
+            ok: true,
+            data: session,
+            ...withDebug({ result: 'assessment-style-primary-ok' }),
+          });
+        } catch (firstErr) {
+          const firstStatus = Number(firstErr?.status || 0);
+          const firstMessage = String(firstErr?.message || '').toLowerCase();
+          const isTransient = (
+            isRetriableStatus(firstStatus)
+            || isInterviewValidationFailure(firstErr)
+            || isModelUnavailableFailure(firstErr)
+            || firstMessage.includes('rate')
+            || firstMessage.includes('quota')
+            || firstMessage.includes('busy')
+            || isTimeoutOrAbortMessage(firstMessage)
+          );
+          addTrace('assessment-style', {
+            result: 'primary-fail',
+            status: firstStatus,
+            transient: isTransient,
+            message: String(firstErr?.message || '').slice(0, 220),
+          });
+
+          if (requestPolicy.strictAi && isTransient) {
+            const fallback = await buildAssessmentStyleFallbackSession();
+            addTrace('assessment-style', { result: 'transient-fallback', questionCount: fallback.questions.length });
+            return sendJson(res, 200, {
+              ok: true,
+              data: fallback,
+              warning: 'AI interview generation is temporarily rate-limited. Using fallback interview questions so user flow can continue.',
+              ...withDebug({ result: 'assessment-style-transient-fallback' }),
+            });
+          }
+          if (requestPolicy.strictAi) {
+            const fail = classifyAiFailure(firstErr, 'Could not generate interview questions with AI');
+            addTrace('assessment-style', { result: 'strict-fail', status: fail.status, error: fail.error });
+            return sendJson(res, fail.status, {
+              error: fail.error,
+              ...withDebug({ result: 'assessment-style-strict-fail' }),
+            });
+          }
+
+          const fallback = await buildAssessmentStyleFallbackSession();
+          addTrace('assessment-style', { result: 'fallback', questionCount: fallback.questions.length });
+          return sendJson(res, 200, {
+            ok: true,
+            data: fallback,
+            warning: 'Using fallback interview questions because AI providers are unavailable or budget-limited.',
+            ...withDebug({ result: 'assessment-style-fallback' }),
+          });
+        }
+      }
       const dominantInterviewError = (...errors) => {
         const rows = errors
           .flat()
@@ -8874,10 +10789,13 @@ JSON shape:
           .map((m) => String(m || '').trim())
           .filter((m) => m.includes('/'));
         const priority = [
-          'deepseek/deepseek-chat',
-          'google/gemini-2.0-flash-001',
           'openai/gpt-4o-mini',
+          'google/gemini-2.5-flash',
+          'google/gemini-2.0-flash-001',
           'openai/gpt-4.1-mini',
+          'deepseek/deepseek-chat',
+          'mistralai/ministral-8b',
+          'mistralai/mistral-small-3.2-24b-instruct:free',
           'meta-llama/llama-3.3-70b-instruct:free',
         ];
         for (const candidate of priority) {
@@ -8886,28 +10804,54 @@ JSON shape:
         return defaultInterviewOpenRouterModel;
       })();
       const requestedInterviewRouter = { ...(router && typeof router === 'object' ? router : {}) };
-      const requestedInterviewMode = String(requestedInterviewRouter?.mode || 'auto').trim().toLowerCase();
+      const requestedInterviewModeRaw = normalizeRouterMode(requestedInterviewRouter?.mode || 'auto_thinking');
       const requestedInterviewProvider = String(requestedInterviewRouter?.provider || 'auto').trim().toLowerCase();
-      const shouldPinInterviewToOpenRouter = providerAvailable('openrouter')
-        && (
-          requestedInterviewProvider === 'auto'
-          || requestedInterviewProvider === 'openrouter'
-          || requestedInterviewMode !== 'manual'
-        );
-      const interviewRouter = shouldPinInterviewToOpenRouter
+      const openRouterAvailableForInterview = providerAvailable('openrouter');
+      const openRouterLocalizedLanguageCodes = new Set(['my', 'vi', 'tl', 'km', 'lo']);
+      const forceOpenRouterForLanguage = (
+        openRouterLocalizedLanguageCodes.has(targetLanguageCode)
+        && ['auto', 'openrouter', ''].includes(requestedInterviewProvider)
+      );
+      const requestedInterviewMode = (
+        requestedInterviewModeRaw === 'auto_fast' && forceOpenRouterForLanguage
+      )
+        ? 'auto_thinking'
+        : requestedInterviewModeRaw;
+      const manualOpenRouterRequested = (
+        requestedInterviewMode === 'manual'
+        && requestedInterviewProvider === 'openrouter'
+      );
+      const autoOpenRouterPreferred = (
+        openRouterAvailableForInterview
+        && requestedInterviewMode === 'auto_thinking'
+      );
+      const forcedLocalizedOpenRouter = (
+        openRouterAvailableForInterview
+        && forceOpenRouterForLanguage
+      );
+      const useOpenRouterInterview = (
+        manualOpenRouterRequested
+        || autoOpenRouterPreferred
+        || forcedLocalizedOpenRouter
+      );
+      const manualInterviewModel = (
+        requestedInterviewProvider === 'openrouter'
+        && String(requestedInterviewRouter?.model || '').includes('/')
+      )
+        ? String(requestedInterviewRouter.model || '').trim()
+        : defaultInterviewOpenRouterModel;
+      const interviewRouter = useOpenRouterInterview
         ? {
             ...requestedInterviewRouter,
             mode: 'manual',
             provider: 'openrouter',
-            model: (
-              requestedInterviewProvider === 'openrouter'
-              && String(requestedInterviewRouter?.model || '').includes('/')
-            )
-              ? String(requestedInterviewRouter.model || '').trim()
-              : defaultInterviewOpenRouterModel,
+            model: manualInterviewModel,
           }
         : requestedInterviewRouter;
-      const fastRetryRouter = providerAvailable('openrouter')
+      const canUseOpenRouterFastLane = openRouterAvailableForInterview && useOpenRouterInterview;
+      const interviewOpenRouterMaxKeys = openRouterInterviewMaxKeys(4);
+      const interviewOpenRouterQuickMaxKeys = openRouterInterviewMaxKeys(3);
+      const fastRetryRouter = canUseOpenRouterFastLane
         ? {
             ...interviewRouter,
             mode: 'manual',
@@ -8915,7 +10859,7 @@ JSON shape:
             model: defaultInterviewOpenRouterModel,
           }
         : interviewRouter;
-      const localizedFastRetryRouter = providerAvailable('openrouter')
+      const localizedFastRetryRouter = canUseOpenRouterFastLane
         ? {
             ...interviewRouter,
             mode: 'manual',
@@ -8923,26 +10867,387 @@ JSON shape:
             model: defaultLocalizedInterviewOpenRouterModel,
           }
         : interviewRouter;
-      const buildInterviewSession = (questions = []) => ({
-        role: {
-          jobTitle: String(roleBlueprint?.jobTitle || requestedJobTitle).replace(/\s+/g, ' ').trim() || requestedJobTitle,
-          roleSummary: String(roleBlueprint?.roleSummary || `Interview simulation for ${requestedJobTitle}.`).replace(/\s+/g, ' ').trim() || `Interview simulation for ${requestedJobTitle}.`,
-          responsibilities: normalizeInterviewList(roleBlueprint?.responsibilities, 20, 280),
-          requirements: normalizeInterviewList(roleBlueprint?.requirements, 20, 280),
-        },
-        questions,
-        generatedAt: nowIso(),
+      const fallbackLocalizedInterviewRouter = (() => {
+        if (!forceOpenRouterForLanguage || isEnglishInterview) return interviewRouter;
+        const requestedManualProvider = (
+          requestedInterviewMode === 'manual'
+          && requestedInterviewProvider
+          && requestedInterviewProvider !== 'auto'
+        )
+          ? requestedInterviewProvider
+          : '';
+        const fallbackProviderOrder = [
+          requestedManualProvider,
+          'mistral',
+          'gemini',
+          'openai',
+          'anthropic',
+        ];
+        for (const providerName of fallbackProviderOrder) {
+          const provider = String(providerName || '').trim().toLowerCase();
+          if (!provider || provider === 'openrouter') continue;
+          if (!providerAvailable(provider)) continue;
+          if (provider === 'mistral') {
+            return {
+              ...requestedInterviewRouter,
+              mode: 'manual',
+              provider: 'mistral',
+              model: pickAutoFastMistralModel(modelCandidatesFor('mistral')),
+            };
+          }
+          if (provider === 'gemini') {
+            const geminiModels = modelCandidatesFor('gemini');
+            return {
+              ...requestedInterviewRouter,
+              mode: 'manual',
+              provider: 'gemini',
+              model: geminiModels[0] || 'gemini-2.5-flash',
+            };
+          }
+          if (provider === 'openai') {
+            const openAiModels = modelCandidatesFor('openai');
+            return {
+              ...requestedInterviewRouter,
+              mode: 'manual',
+              provider: 'openai',
+              model: openAiModels[0] || 'gpt-4o-mini',
+            };
+          }
+          if (provider === 'anthropic') {
+            const anthropicModels = modelCandidatesFor('anthropic');
+            return {
+              ...requestedInterviewRouter,
+              mode: 'manual',
+              provider: 'anthropic',
+              model: anthropicModels[0] || 'claude-3-5-sonnet-latest',
+            };
+          }
+        }
+        return interviewRouter;
+      })();
+      const shouldBypassInterviewBreaker = (candidateRouter = {}) => {
+        const mode = String(candidateRouter?.mode || 'auto').trim().toLowerCase();
+        const provider = String(candidateRouter?.provider || 'auto').trim().toLowerCase();
+        return mode === 'manual' && provider !== 'auto';
+      };
+      const buildInterviewSession = (questions = [], roleOverride = null) => {
+        const roleSource = roleOverride && typeof roleOverride === 'object'
+          ? roleOverride
+          : {};
+        return {
+          role: {
+            jobTitle: String(requestedJobTitle).replace(/\s+/g, ' ').trim().slice(0, 120) || requestedJobTitle,
+            roleSummary: String(roleSource?.roleSummary || '').replace(/\s+/g, ' ').trim().slice(0, 600),
+          },
+          questions,
+          generatedAt: nowIso(),
+        };
+      };
+      const resolveFastInterviewRole = (source = {}) => {
+        const roleRaw = extractInterviewRoleRaw(source);
+        return {
+          jobTitle: String(requestedJobTitle).replace(/\s+/g, ' ').trim().slice(0, 120) || requestedJobTitle,
+          roleSummary: String(roleRaw?.roleSummary || roleRaw?.summary || '').replace(/\s+/g, ' ').trim().slice(0, 600),
+        };
+      };
+      const normalizeFastInterviewRows = (rawRows = [], language = 'en-US') => {
+        const rows = extractInterviewQuestionRows(rawRows);
+        const out = [];
+        const seen = new Set();
+        for (let idx = 0; idx < rows.length; idx += 1) {
+          const row = rows[idx] || {};
+          let question = enforceInterviewQuestionText(pickInterviewQuestionText(row), language).slice(0, 500);
+          if (!question || question.length < 8) continue;
+          if (!/[?ï¼Ÿ]/.test(question) && looksLikeInterviewQuestionText(question)) {
+            question = `${question.replace(/[။.。！？!?…]+$/u, '').trim()}?`;
+          }
+          const key = normalizeInterviewComparableText(question);
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          out.push({
+            id: String(row?.id || row?.questionId || `q${out.length + 1}`).slice(0, 80),
+            question,
+            focus: String(row?.focus || row?.type || 'general').replace(/\s+/g, ' ').trim().slice(0, 80) || 'general',
+          });
+          if (out.length >= questionCount) break;
+        }
+        return out;
+      };
+      const enforceFastInterviewLocale = async (sessionInput = {}, contextTag = 'fast-locale') => {
+        const baseRole = resolveFastInterviewRole(sessionInput?.role || sessionInput);
+        let session = buildInterviewSession(
+          normalizeFastInterviewRows(sessionInput?.questions ?? sessionInput, targetLanguage),
+          baseRole
+        );
+        if (isEnglishInterview || !session.questions.length) return session;
+        const roleNeedsLocalization = shouldForceLocalizedTextFallback(String(session?.role?.roleSummary || ''), targetLanguage);
+        const questionNeedsLocalization = shouldForceLocalizedQuestionFallback(session.questions, targetLanguage);
+        if (!roleNeedsLocalization && !questionNeedsLocalization) return session;
+        const localizedSessionRaw = await enforcePreferredLocale(
+          session,
+          targetLanguageCode,
+          interviewRouter,
+          `interview-session|${contextTag}|${accountId}|${requestedJobTitle}|lang:${targetLanguage}|focus:${questionFocus}|seniority:${seniority}`
+        );
+        session = buildInterviewSession(
+          normalizeFastInterviewRows(localizedSessionRaw?.questions ?? localizedSessionRaw, targetLanguage),
+          resolveFastInterviewRole(localizedSessionRaw?.role || localizedSessionRaw)
+        );
+        const finalRoleNeedsLocalization = shouldForceLocalizedTextFallback(String(session?.role?.roleSummary || ''), targetLanguage);
+        const finalQuestionNeedsLocalization = shouldForceLocalizedQuestionFallback(session.questions, targetLanguage);
+        if (finalQuestionNeedsLocalization || !Array.isArray(session.questions) || !session.questions.length) {
+          if (
+            targetLanguageCode === 'my'
+            && Array.isArray(session.questions)
+            && canUseSoftBurmeseQuestionSet(session.questions, minQuestionCount)
+          ) {
+            return session;
+          }
+          const e = new Error('Localized interview output failed language gate.');
+          e.status = 503;
+          throw e;
+        }
+        if (finalRoleNeedsLocalization) {
+          session = buildInterviewSession(session.questions, {
+            ...session.role,
+            roleSummary: '',
+          });
+        }
+        return session;
+      };
+      const fastGenerationLanguage = targetLanguage;
+      const fastGenerationLanguageLabel = targetLanguageLabel;
+      const fastPrompt = promptInterviewQuestionsDirect({
+        requestedJobTitle,
+        targetLanguage: fastGenerationLanguage,
+        targetLanguageLabel: fastGenerationLanguageLabel,
+        candidateName,
+        region: String(profile?.region || profileContext?.region || 'ASEAN').trim() || 'ASEAN',
+        profileSkills: profile?.skills,
+        profileExperience: profile?.experience,
+        questionFocus,
+        seniority,
+        questionCount,
+        strictRetry: false,
       });
-      const buildDeterministicFallbackQuestions = async () => {
-        const fallbackBase = marketDrivenEnglishFallbackInterviewQuestions(
+      const fastKeyBase = `interview-session|fast|${accountId}|${requestedJobTitle}|lang:${targetLanguage}|gen:${fastGenerationLanguage}|focus:${questionFocus}|seniority:${seniority}|${JSON.stringify(interviewRouter)}`;
+      const localizedTransientFallbackQuestions = () => {
+        const roleLabel = String(requestedJobTitle || 'ဤရာထူး').trim() || 'ဤရာထူး';
+        if (targetLanguageCode === 'my') {
+          return [
+            {
+              id: 'q1',
+              question: `${roleLabel} အလုပ်မှာ တိုင်းတာနိုင်တဲ့ ရလဒ် ရခဲ့တဲ့ ပရောဂျက်တစ်ခုကို ဖော်ပြပါ?`,
+              focus: 'execution',
+            },
+            {
+              id: 'q2',
+              question: `${roleLabel} အလုပ်မှာ အရေးကြီးပြီး အရေးပေါ် အလုပ်တွေကို ဘယ်လို ဦးစားပေးစီမံပါသလဲ?`,
+              focus: 'scenario',
+            },
+            {
+              id: 'q3',
+              question: `${roleLabel} အတွက် ပထမနေ့မှာ အရေးအကြီးဆုံး ကျွမ်းကျင်မှုတစ်ခုက ဘာလဲ၊ ဘာကြောင့်လဲ?`,
+              focus: 'market',
+            },
+            {
+              id: 'q4',
+              question: `ဆင်တူတဲ့ အလုပ်တစ်ခုမှာ သင်လုပ်မိခဲ့တဲ့ အမှားတစ်ခုနဲ့ နောက်ပိုင်း ဘာတွေ ပြောင်းလဲခဲ့သလဲ?`,
+              focus: 'behavioral',
+            },
+          ];
+        }
+        if (targetLanguageCode === 'ms') {
+          return [
+            {
+              id: 'q1',
+              question: `Ceritakan satu projek terkini sebagai ${roleLabel} yang menunjukkan hasil boleh diukur?`,
+              focus: 'execution',
+            },
+            {
+              id: 'q2',
+              question: `Apakah KPI pertama yang anda akan pantau dalam peranan ${roleLabel}, dan sasaran realistik 90 hari anda?`,
+              focus: 'scenario',
+            },
+            {
+              id: 'q3',
+              question: `Bagaimana anda mengutamakan tugas mendesak dan penting dalam kerja ${roleLabel} tanpa menjejaskan kualiti?`,
+              focus: 'execution',
+            },
+            {
+              id: 'q4',
+              question: `Kongsi satu kesilapan yang pernah anda lakukan dalam kerja seumpama ini dan perubahan yang anda buat selepas itu?`,
+              focus: 'behavioral',
+            },
+          ];
+        }
+        return [];
+      };
+      const buildQuickTransientFallbackSession = async () => {
+        const nativeFallback = localizedTransientFallbackQuestions();
+        if (nativeFallback.length) {
+          return buildInterviewSession(
+            nativeFallback.map((row) => ({
+              id: String(row?.id || '').slice(0, 80),
+              question: enforceInterviewQuestionText(row?.question, targetLanguage).slice(0, 500),
+              focus: String(row?.focus || 'general').replace(/\s+/g, ' ').trim().slice(0, 80) || 'general',
+            })).filter((row) => !!row.question),
+            { jobTitle: requestedJobTitle, roleSummary: '' }
+          );
+        }
+        let fallbackQuestions = marketDrivenEnglishFallbackInterviewQuestions(
           requestedJobTitle,
-          roleBlueprint,
+          { jobTitle: requestedJobTitle, roleSummary: '' },
           profile,
           {
             questionFocus,
             roleTrack,
             seniority,
             targetCount: questionCount,
+            candidateName: isEnglishInterview ? candidateName : '',
+          }
+        )
+          .map((row, idx) => ({
+            id: String(row?.id || `q${idx + 1}`).slice(0, 80),
+            question: enforceInterviewQuestionText(row?.question, 'en-US').slice(0, 500),
+            focus: String(row?.focus || 'general').replace(/\s+/g, ' ').trim().slice(0, 80) || 'general',
+          }))
+          .filter((row) => !!row.question)
+          .slice(0, questionCount);
+        if (!fallbackQuestions.length) {
+          fallbackQuestions = [
+            { id: 'q1', question: `Describe a recent project where you delivered measurable results as ${requestedJobTitle}.`, focus: 'execution' },
+            { id: 'q2', question: `How do you prioritize urgent and important tasks in ${requestedJobTitle} work?`, focus: 'scenario' },
+            { id: 'q3', question: `Which skill should be strongest for ${requestedJobTitle} on day one, and why?`, focus: 'market' },
+            { id: 'q4', question: `Tell me about a mistake you made in similar work and what you changed after that?`, focus: 'behavioral' },
+          ].map((row) => ({
+            ...row,
+            question: enforceInterviewQuestionText(row.question, 'en-US').slice(0, 500),
+          }));
+        }
+        let session = buildInterviewSession(fallbackQuestions, { jobTitle: requestedJobTitle, roleSummary: '' });
+        if (!isEnglishInterview) {
+          try {
+            const localized = await localizeInterviewSessionQuestions(session, targetLanguage);
+            session = buildInterviewSession(
+              normalizeFastInterviewRows(localized?.questions || session.questions, targetLanguage),
+              resolveFastInterviewRole(localized?.role || session.role)
+            );
+          } catch {
+            // keep English fallback if deterministic localization fails
+          }
+        }
+        if (!Array.isArray(session?.questions) || !session.questions.length) {
+          session = buildInterviewSession(fallbackQuestions, { jobTitle: requestedJobTitle, roleSummary: '' });
+        }
+        return session;
+      };
+      try {
+        const localizedOpenRouterFastPath = !isEnglishInterview && forceOpenRouterForLanguage;
+        const fastRouteOptions = {
+          skipCache: requestPolicy.noCache,
+          bypassBreaker: shouldBypassInterviewBreaker(interviewRouter) || requestPolicy.strictAi,
+          maxTotalMs: localizedOpenRouterFastPath ? 36000 : 26000,
+          maxAttempts: localizedOpenRouterFastPath ? 3 : 2,
+          attemptTimeoutMs: localizedOpenRouterFastPath ? 16000 : 12000,
+          maxTokens: localizedOpenRouterFastPath ? 520 : 420,
+          ...(String(interviewRouter?.provider || '').toLowerCase() === 'openrouter' && interviewOpenRouterMaxKeys > 0
+            ? { openRouterMaxKeys: interviewOpenRouterMaxKeys }
+            : {}),
+        };
+        const fastRaw = await routeJsonWithRepair(interviewRouter, fastPrompt, fastKeyBase, {
+          passes: 2,
+          retryDelayMs: 700,
+          maxTotalMs: 30000,
+          throwOnError: requestPolicy.strictAi,
+          routeOptions: fastRouteOptions,
+        });
+        let fastSession = buildInterviewSession(
+          normalizeFastInterviewRows(fastRaw, fastGenerationLanguage),
+          resolveFastInterviewRole(fastRaw)
+        );
+        if (!Array.isArray(fastSession?.questions) || !fastSession.questions.length) {
+          throw new Error('Invalid interview response');
+        }
+        fastSession = await enforceFastInterviewLocale(fastSession, 'fast-locale');
+        if (!Array.isArray(fastSession?.questions) || !fastSession.questions.length) {
+          throw new Error('Localized interview response is empty');
+        }
+        addTrace('session', { result: 'fast-pass-ok', questionCount: fastSession.questions.length });
+        return sendJson(res, 200, {
+          ok: true,
+          data: fastSession,
+          ...withDebug({ result: 'fast-pass-ok' }),
+        });
+      } catch (fastErr) {
+        const status = Number(fastErr?.status || 0);
+        const message = String(fastErr?.message || '').toLowerCase();
+        const isTransient = (
+          isRetriableStatus(status)
+          || isInterviewValidationFailure(fastErr)
+          || isModelUnavailableFailure(fastErr)
+          || message.includes('rate')
+          || message.includes('quota')
+          || message.includes('busy')
+          || isTimeoutOrAbortMessage(message)
+        );
+        addTrace('fast-fail', {
+          status,
+          message: String(fastErr?.message || '').slice(0, 260),
+          transient: isTransient,
+        });
+        if (isTransient) {
+          if (!isEnglishInterview) {
+            addTrace('session', {
+              result: 'fast-transient-continue',
+              status,
+            });
+          } else {
+            const fallbackSession = await buildQuickTransientFallbackSession();
+            addTrace('session', {
+              result: 'fast-transient-fallback',
+              status,
+              questionCount: Array.isArray(fallbackSession?.questions) ? fallbackSession.questions.length : 0,
+            });
+            return sendJson(res, 200, {
+              ok: true,
+              data: fallbackSession,
+              warning: 'AI interview generation is temporarily rate-limited. Using fallback interview questions so user flow can continue.',
+              ...withDebug({ result: 'fast-transient-fallback' }),
+            });
+          }
+        } else {
+          const fail = classifyAiFailure(fastErr, 'Could not generate interview questions with AI');
+          addTrace('session', { result: 'fast-fail-no-fallback', error: fail.error, status: fail.status });
+          return sendJson(res, fail.status, {
+            ok: false,
+            error: fail.error,
+            ...withDebug({ rootCause: 'fast-fail-no-fallback' }),
+          });
+        }
+      }
+      const localizeInterviewSession = async (session, stage = 'localize') => localizeInterviewSessionQuestions(
+        session,
+        targetLanguage,
+        {
+          router: localizedFastRetryRouter,
+          keyBase: `interview-session|${stage}|${accountId}|${requestedJobTitle}|lang:${targetLanguage}|focus:${questionFocus}|seniority:${seniority}`,
+        }
+      );
+      const buildDeterministicFallbackQuestions = async () => {
+        const fallbackRoleContext = isEnglishInterview
+          ? roleBlueprint
+          : fallbackInterviewRole(requestedJobTitle, profile, 'en-US');
+        const fallbackBase = marketDrivenEnglishFallbackInterviewQuestions(
+          requestedJobTitle,
+          fallbackRoleContext,
+          profile,
+          {
+            questionFocus,
+            roleTrack,
+            seniority,
+            targetCount: questionCount,
+            candidateName: isEnglishInterview ? candidateName : '',
           }
         );
         const normalizeFallbackRows = (rows = [], language = 'en-US') => normalizeAiOnlyInterviewQuestions(rows, language, questionCount)
@@ -8954,15 +11259,23 @@ JSON shape:
           .filter((row) => !!row.question);
         let fallbackQuestions = normalizeFallbackRows(fallbackBase, 'en-US');
         if (!isEnglishInterview && fallbackQuestions.length) {
-          const localizedFallback = await enforcePreferredLocale(
-            fallbackQuestions,
-            targetLanguage,
-            interviewRouter,
-            `interview-session|quality-fallback|${accountId}|${requestedJobTitle}|${targetLanguage}|${questionFocus}|${seniority}`
+          const localizedSession = await localizeInterviewSession(
+            buildInterviewSession(fallbackQuestions),
+            'fallback-localize'
           );
-          fallbackQuestions = normalizeFallbackRows(localizedFallback, targetLanguage);
+          if (localizedSession && Array.isArray(localizedSession.questions) && localizedSession.questions.length) {
+            fallbackQuestions = normalizeFallbackRows(localizedSession.questions, targetLanguage);
+          } else {
+            fallbackQuestions = normalizeFallbackRows(fallbackQuestions, 'en-US');
+          }
         } else {
           fallbackQuestions = normalizeFallbackRows(fallbackQuestions, 'en-US');
+        }
+        if (!isEnglishInterview && shouldForceLocalizedQuestionFallback(fallbackQuestions, targetLanguage)) {
+          const nativeFallback = normalizeFallbackRows(localizedTransientFallbackQuestions(), targetLanguage);
+          if (nativeFallback.length) {
+            fallbackQuestions = nativeFallback;
+          }
         }
         if (!fallbackQuestions.length) {
           fallbackQuestions = fallbackBase
@@ -8989,7 +11302,15 @@ JSON shape:
         if (result.questions.length < minQuestionCount) return false;
         const reason = String(result?.quality?.reason || '').toLowerCase();
         if (!reason) return true;
-        if (['empty', 'too_few', 'missing_question_mark', 'language_mismatch'].includes(reason)) return false;
+        if (targetLanguageCode === 'my' && ['off_role', 'too_generic'].includes(reason)) return true;
+        if (
+          targetLanguageCode === 'my'
+          && ['language_mismatch', 'off_role', 'too_generic'].includes(reason)
+          && canUseSoftBurmeseQuestionSet(result.questions, minQuestionCount)
+        ) {
+          return true;
+        }
+        if (['empty', 'too_few', 'missing_question_mark', 'language_mismatch', 'off_role', 'too_generic'].includes(reason)) return false;
         return true;
       };
       const tryLocalizeFirstPassQuestions = async (result) => {
@@ -8997,7 +11318,10 @@ JSON shape:
         if (!result || !Array.isArray(result.questions) || !result.questions.length) return null;
         const reason = String(result?.quality?.reason || '').toLowerCase();
         if (reason !== 'language_mismatch') return null;
-        const localized = await localizeInterviewSessionQuestions(buildInterviewSession(result.questions), targetLanguage);
+        const localized = await localizeInterviewSession(
+          buildInterviewSession(result.questions),
+          'first-pass-localize'
+        );
         if (!localized || !Array.isArray(localized.questions) || localized.questions.length < minQuestionCount) return null;
         const localizedQuality = evaluateAiOnlyInterviewQuestions(
           localized.questions,
@@ -9015,6 +11339,10 @@ JSON shape:
             requestedJobTitle,
             targetLanguage: 'en-US',
             targetLanguageLabel: 'English',
+            candidateName,
+            region: String(profile?.region || profileContext?.region || 'ASEAN').trim() || 'ASEAN',
+            profileSkills: profile?.skills,
+            profileExperience: profile?.experience,
             questionFocus,
             seniority,
             questionCount,
@@ -9031,12 +11359,14 @@ JSON shape:
             throwOnError: true,
             routeOptions: {
               skipCache: requestPolicy.noCache,
-              bypassBreaker: requestPolicy.strictAi,
+              bypassBreaker: shouldBypassInterviewBreaker(bridgeRouter),
               maxTotalMs: 10000,
               maxAttempts: 2,
               attemptTimeoutMs: 5000,
               maxTokens: 320,
-              openRouterMaxKeys: 1,
+              ...(String(bridgeRouter?.provider || '').toLowerCase() === 'openrouter' && interviewOpenRouterQuickMaxKeys > 0
+                ? { openRouterMaxKeys: interviewOpenRouterQuickMaxKeys }
+                : {}),
             },
           });
           const bridgeQuestions = normalizeAiOnlyInterviewQuestions(bridgeRaw, 'en-US', questionCount);
@@ -9048,7 +11378,10 @@ JSON shape:
           );
           const bridgeResult = { questions: bridgeQuestions, quality: bridgeQuality };
           if (!bridgeQuality.ok && !canReturnFirstPassQuestions(bridgeResult)) return null;
-          const localized = await localizeInterviewSessionQuestions(buildInterviewSession(bridgeQuestions), targetLanguage);
+          const localized = await localizeInterviewSession(
+            buildInterviewSession(bridgeQuestions),
+            'bridge-localize'
+          );
           if (!localized || !Array.isArray(localized.questions) || localized.questions.length < minQuestionCount) return null;
           const localizedQuality = evaluateAiOnlyInterviewQuestions(
             localized.questions,
@@ -9063,13 +11396,28 @@ JSON shape:
         }
       };
       const tryTimeoutRecoveryGeneration = async () => {
-        const recoveryRouter = providerAvailable('openrouter')
-          ? (isEnglishInterview ? fastRetryRouter : localizedFastRetryRouter)
-          : interviewRouter;
+        const localizedRecoveryRouter = (
+          !isEnglishInterview
+          && forceOpenRouterForLanguage
+          && String(fallbackLocalizedInterviewRouter?.provider || '').toLowerCase() !== 'openrouter'
+        )
+          ? fallbackLocalizedInterviewRouter
+          : null;
+        const recoveryRouter = localizedRecoveryRouter || (
+          providerAvailable('openrouter')
+            ? (isEnglishInterview ? fastRetryRouter : localizedFastRetryRouter)
+            : interviewRouter
+        );
+        const recoveryGenerationLanguage = isEnglishInterview ? targetLanguage : 'en-US';
+        const recoveryGenerationLanguageLabel = isEnglishInterview ? targetLanguageLabel : 'English';
         const recoveryPrompt = promptInterviewQuestionsDirect({
           requestedJobTitle,
-          targetLanguage,
-          targetLanguageLabel,
+          targetLanguage: recoveryGenerationLanguage,
+          targetLanguageLabel: recoveryGenerationLanguageLabel,
+          candidateName,
+          region: String(profile?.region || profileContext?.region || 'ASEAN').trim() || 'ASEAN',
+          profileSkills: profile?.skills,
+          profileExperience: profile?.experience,
           questionFocus,
           seniority,
           questionCount,
@@ -9087,23 +11435,25 @@ JSON shape:
             throwOnError: true,
             routeOptions: {
               skipCache: requestPolicy.noCache,
-              bypassBreaker: true,
+              bypassBreaker: shouldBypassInterviewBreaker(recoveryRouter),
               maxTotalMs: isEnglishInterview ? 20000 : 22000,
-              maxAttempts: 1,
+              maxAttempts: shouldBypassInterviewBreaker(recoveryRouter) ? 1 : 2,
               attemptTimeoutMs: isEnglishInterview ? 18000 : 20000,
               maxTokens: isEnglishInterview ? 320 : 360,
-              openRouterMaxKeys: 1,
+              ...(String(recoveryRouter?.provider || '').toLowerCase() === 'openrouter' && interviewOpenRouterQuickMaxKeys > 0
+                ? { openRouterMaxKeys: interviewOpenRouterQuickMaxKeys }
+                : {}),
             },
           });
-          let questions = normalizeAiOnlyInterviewQuestions(raw, targetLanguage, questionCount);
+          let questions = normalizeAiOnlyInterviewQuestions(raw, recoveryGenerationLanguage, questionCount);
           if (!isEnglishInterview && questions.length) {
-            const localizedQuestions = await enforcePreferredLocale(
-              questions,
-              targetLanguage,
-              recoveryRouter,
-              `interview-session|timeout-recovery|${accountId}|${requestedJobTitle}|${targetLanguage}|${questionFocus}|${seniority}`
+            const localized = await localizeInterviewSession(
+              buildInterviewSession(questions),
+              'timeout-recovery-localize'
             );
-            questions = normalizeAiOnlyInterviewQuestions(localizedQuestions, targetLanguage, questionCount);
+            if (localized && Array.isArray(localized.questions)) {
+              questions = normalizeAiOnlyInterviewQuestions(localized.questions, targetLanguage, questionCount);
+            }
           }
           const quality = evaluateAiOnlyInterviewQuestions(
             questions,
@@ -9141,23 +11491,48 @@ JSON shape:
         }
       };
       const runInterviewGeneration = async (strictRetry = false, forceFastRouter = false) => {
-        const useFastRouter = forceFastRouter || (!isEnglishInterview && !strictRetry && providerAvailable('openrouter'));
+        const useFastRouter = forceFastRouter || (canUseOpenRouterFastLane && !isEnglishInterview && !strictRetry);
+        const diversifiedLocalizedRetryRouter = (
+          strictRetry
+          && !isEnglishInterview
+          && forceOpenRouterForLanguage
+          && String(fallbackLocalizedInterviewRouter?.provider || '').toLowerCase() !== 'openrouter'
+        )
+          ? fallbackLocalizedInterviewRouter
+          : interviewRouter;
         const activeRouter = useFastRouter
           ? (isEnglishInterview ? fastRetryRouter : localizedFastRetryRouter)
-          : interviewRouter;
+          : diversifiedLocalizedRetryRouter;
         const localLanguageMode = !isEnglishInterview;
-        const maxTotalMs = strictRetry
-          ? (localLanguageMode ? 7500 : 8000)
-          : (localLanguageMode ? 10000 : 12000);
-        const attemptTimeoutMs = strictRetry
-          ? (localLanguageMode ? 5000 : 4500)
-          : (localLanguageMode ? 6500 : 5500);
-        const maxAttempts = localLanguageMode ? (useFastRouter ? 1 : 2) : 2;
+        const routerMode = String(activeRouter?.mode || 'auto').trim().toLowerCase();
+        const routerProvider = String(activeRouter?.provider || 'auto').trim().toLowerCase();
+        const autoRouting = routerMode !== 'manual' || routerProvider === 'auto';
+        const manualPinnedRouter = !autoRouting;
+        let maxTotalMs = strictRetry
+          ? (localLanguageMode ? (manualPinnedRouter ? 16000 : 22000) : (manualPinnedRouter ? 14000 : 20000))
+          : (localLanguageMode ? (manualPinnedRouter ? 22000 : 32000) : (manualPinnedRouter ? 20000 : 28000));
+        let attemptTimeoutMs = strictRetry
+          ? (localLanguageMode ? (manualPinnedRouter ? 7000 : 8500) : (manualPinnedRouter ? 6500 : 8000))
+          : (localLanguageMode ? (manualPinnedRouter ? 9000 : 11000) : (manualPinnedRouter ? 8500 : 10000));
+        let maxAttempts = manualPinnedRouter
+          ? (strictRetry ? 1 : 2)
+          : (localLanguageMode ? (strictRetry ? 3 : 4) : (strictRetry ? 2 : 3));
+        if (localLanguageMode && forceOpenRouterForLanguage) {
+          if (strictRetry) {
+            maxTotalMs = Math.max(maxTotalMs, manualPinnedRouter ? 26000 : 28000);
+            attemptTimeoutMs = Math.max(attemptTimeoutMs, manualPinnedRouter ? 12000 : 13000);
+            maxAttempts = Math.max(maxAttempts, manualPinnedRouter ? 2 : 3);
+          } else {
+            maxTotalMs = Math.max(maxTotalMs, manualPinnedRouter ? 36000 : 38000);
+            attemptTimeoutMs = Math.max(attemptTimeoutMs, manualPinnedRouter ? 15000 : 16000);
+            maxAttempts = Math.max(maxAttempts, manualPinnedRouter ? 3 : 4);
+          }
+        }
         const maxTokens = strictRetry
-          ? (localLanguageMode ? 320 : 280)
-          : (localLanguageMode ? 360 : 320);
+          ? (localLanguageMode ? 560 : 520)
+          : (localLanguageMode ? 680 : 620);
         const openRouterMaxKeys = String(activeRouter?.provider || '').toLowerCase() === 'openrouter'
-          ? (strictRetry ? 2 : (localLanguageMode ? 2 : 1))
+          ? interviewOpenRouterMaxKeys
           : 0;
         const startedAt = Date.now();
         const generationMeta = {
@@ -9177,17 +11552,23 @@ JSON shape:
             openRouterMaxKeys,
           },
         };
+        const generationLanguage = isEnglishInterview ? targetLanguage : 'en-US';
+        const generationLanguageLabel = isEnglishInterview ? targetLanguageLabel : 'English';
         const prompt = promptInterviewQuestionsDirect({
           requestedJobTitle,
-          targetLanguage,
-          targetLanguageLabel,
+          targetLanguage: generationLanguage,
+          targetLanguageLabel: generationLanguageLabel,
+          candidateName,
+          region: String(profile?.region || profileContext?.region || 'ASEAN').trim() || 'ASEAN',
+          profileSkills: profile?.skills,
+          profileExperience: profile?.experience,
           questionFocus,
           seniority,
           questionCount,
           strictRetry,
         });
         const key = sha256(
-          `interview-session|ai-only|${accountId}|${requestedJobTitle}|lang:${targetLanguage}|focus:${questionFocus}|seniority:${seniority}|strict:${strictRetry ? '1' : '0'}|fast:${forceFastRouter ? '1' : '0'}|p:${sha256(prompt).slice(0, 12)}|${JSON.stringify(activeRouter)}`
+          `interview-session|ai-only|${accountId}|${requestedJobTitle}|lang:${targetLanguage}|gen:${generationLanguage}|focus:${questionFocus}|seniority:${seniority}|strict:${strictRetry ? '1' : '0'}|fast:${forceFastRouter ? '1' : '0'}|p:${sha256(prompt).slice(0, 12)}|${JSON.stringify(activeRouter)}`
         );
         // Match assessment flow: route JSON with repair before normalization.
         let raw = null;
@@ -9199,7 +11580,7 @@ JSON shape:
             throwOnError: true,
             routeOptions: {
               skipCache: requestPolicy.noCache,
-              bypassBreaker: requestPolicy.strictAi,
+              bypassBreaker: shouldBypassInterviewBreaker(activeRouter),
               maxTotalMs,
               maxAttempts,
               attemptTimeoutMs,
@@ -9223,15 +11604,15 @@ JSON shape:
           };
           throw emptyErr;
         }
-        let questions = normalizeAiOnlyInterviewQuestions(raw, targetLanguage, questionCount);
+        let questions = normalizeAiOnlyInterviewQuestions(raw, generationLanguage, questionCount);
         if (!isEnglishInterview && questions.length) {
-          const localizedQuestions = await enforcePreferredLocale(
-            questions,
-            targetLanguage,
-            activeRouter,
-            `interview-session|ai-only|locale|${accountId}|${requestedJobTitle}|${targetLanguage}|${questionFocus}|${seniority}|strict:${strictRetry ? '1' : '0'}`
+          const localized = await localizeInterviewSession(
+            buildInterviewSession(questions),
+            strictRetry ? 'retry-pass-localize' : 'first-pass-localize'
           );
-          questions = normalizeAiOnlyInterviewQuestions(localizedQuestions, targetLanguage, questionCount);
+          if (localized && Array.isArray(localized.questions)) {
+            questions = normalizeAiOnlyInterviewQuestions(localized.questions, targetLanguage, questionCount);
+          }
         }
         const quality = evaluateAiOnlyInterviewQuestions(
           questions,
@@ -9252,6 +11633,9 @@ JSON shape:
         const status = Number(err?.status || 0);
         const message = String(err?.message || '').toLowerCase();
         return (
+          isInterviewValidationFailure(err)
+          || isModelUnavailableFailure(err)
+          ||
           isTimeoutOrAbortMessage(message)
           || message.includes('invalid json')
           || isRetriableStatus(status)
@@ -9261,7 +11645,7 @@ JSON shape:
       let first = null;
       let firstErr = null;
       try {
-        first = await runInterviewGeneration(false, !isEnglishInterview);
+        first = await runInterviewGeneration(false, false);
         addTrace('first', {
           ok: true,
           durationMs: Number(first?.meta?.durationMs || 0),
@@ -9404,7 +11788,12 @@ JSON shape:
             });
           }
           const rootErr = dominantInterviewError(firstErr, e);
-          if (rootErr && !isTimeoutOrAbortMessage(String(rootErr?.message || '').toLowerCase())) {
+          if (
+            rootErr
+            && !isTimeoutOrAbortMessage(String(rootErr?.message || '').toLowerCase())
+            && !isInterviewValidationFailure(rootErr)
+            && !isModelUnavailableFailure(rootErr)
+          ) {
             const fail = classifyAiFailure(rootErr, 'Could not generate interview questions with AI');
             addTrace('root-cause', {
               status: fail.status,
@@ -9425,7 +11814,7 @@ JSON shape:
             ...withDebug({ result: 'timeout-deterministic-fallback' }),
           });
         }
-        if (isRetriableStatus(Number(e?.status || 0))) {
+        if (isRetriableStatus(Number(e?.status || 0)) || isInterviewValidationFailure(e) || isModelUnavailableFailure(e)) {
           const localizedFirstQuestions = await tryLocalizeFirstPassQuestions(first);
           if (localizedFirstQuestions) {
             addTrace('session', { result: 'retriable-localize-first-pass' });
@@ -9678,6 +12067,8 @@ function tryServeStatic(res, pathname) {
 
 function routeNameToPath(name) {
   if (name === 'config') return '/api/config';
+  if (name === 'profile-career-guidance') return '/api/profile/career-guidance';
+  if (name === 'profile-career-guidance-role') return '/api/profile/career-guidance/role';
   if (name === 'generate-assessment') return '/api/generate/assessment';
   if (name === 'generate-course-outline') return '/api/generate/course-outline';
   if (name === 'generate-module-lesson-plan') return '/api/generate/module-lesson-plan';
@@ -9730,8 +12121,6 @@ if (require.main === module) {
   server.listen(PORT, () => {
     console.log(`Nexus AI server listening on http://localhost:${PORT}`);
     console.log('Configured providers:', providerCandidates().filter(providerAvailable).join(', ') || '(none)');
+    console.log(`OpenRouter keys loaded: ${openRouterApiKeys().length} | Mistral keys loaded: ${mistralApiKeys().length}`);
   });
 }
-
-
-

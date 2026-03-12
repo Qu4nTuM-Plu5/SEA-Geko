@@ -8,6 +8,7 @@ import {
   ImpactMetrics,
   LearningCourseSummary,
   CourseAnalyticsSummary,
+  CareerGuidanceRole,
   InterviewRecommendedJob,
   InterviewSession,
   InterviewAnswerFeedback,
@@ -100,8 +101,16 @@ const getAccountId = (): string => {
 };
 
 const getRouterConfig = (): RouterConfig => {
+  const AUTO_FAST_MODEL = 'auto-fast';
+  const AUTO_THINKING_MODEL = 'auto-thinking';
+  const clampProvider = (value: unknown): RouterConfig['provider'] => {
+    const v = String(value || 'auto').trim().toLowerCase();
+    if (v === 'openrouter' || v === 'mistral' || v === 'ollama' || v === 'gemini' || v === 'openai' || v === 'anthropic') return v;
+    return 'auto';
+  };
   const sanitizeModel = (value: unknown): string => {
     const model = String(value || 'auto').trim() || 'auto';
+    if (model === AUTO_FAST_MODEL || model === AUTO_THINKING_MODEL) return model;
     return DEPRECATED_MODELS.has(model) ? 'auto' : model;
   };
   const sanitizeCandidates = (value: unknown): string[] | undefined => {
@@ -111,15 +120,35 @@ const getRouterConfig = (): RouterConfig => {
       .filter((m) => m && !DEPRECATED_MODELS.has(m));
     return out.length ? out : undefined;
   };
+  const normalizeMode = (modeRaw: unknown, providerRaw: unknown, modelRaw: unknown): RouterConfig['mode'] => {
+    const mode = String(modeRaw || '').trim().toLowerCase();
+    const provider = clampProvider(providerRaw);
+    const model = sanitizeModel(modelRaw);
+    if (mode === 'manual') return 'manual';
+    if (mode === 'auto_fast' || mode === 'autofast' || mode === 'fast') return 'auto_fast';
+    if (mode === 'auto_thinking' || mode === 'autothinking' || mode === 'thinking' || mode === 'auto') return 'auto_thinking';
+    if (provider === 'auto' && model === AUTO_FAST_MODEL) return 'auto_fast';
+    if (provider === 'auto' && (model === AUTO_THINKING_MODEL || model === 'auto')) return 'auto_thinking';
+    return (provider !== 'auto' || model !== 'auto') ? 'manual' : 'auto_fast';
+  };
 
   try {
     const raw = localStorage.getItem('nexus_router_config');
     if (raw) {
       const parsed = JSON.parse(raw);
+      const mode = normalizeMode(parsed.mode, parsed.provider, parsed.model);
+      const parsedModel = sanitizeModel(parsed.model);
+      const autoModel = (
+        mode === 'auto_fast'
+          ? AUTO_FAST_MODEL
+          : AUTO_THINKING_MODEL
+      );
       return {
-        mode: parsed.mode === 'manual' ? 'manual' : 'auto',
-        provider: parsed.provider || 'auto',
-        model: sanitizeModel(parsed.model),
+        mode,
+        provider: mode === 'manual' ? clampProvider(parsed.provider) : 'auto',
+        model: mode === 'manual'
+          ? parsedModel
+          : (parsedModel === AUTO_FAST_MODEL || parsedModel === AUTO_THINKING_MODEL ? parsedModel : autoModel),
         modelCandidates: sanitizeCandidates(parsed.modelCandidates),
       };
     }
@@ -128,14 +157,19 @@ const getRouterConfig = (): RouterConfig => {
   }
 
   // Backward compatibility with older model selector
-  let mode: 'auto' | 'manual' = 'auto';
-  let model = 'auto';
+  let mode: RouterConfig['mode'] = 'auto_fast';
+  let model = AUTO_FAST_MODEL;
+  let provider: RouterConfig['provider'] = 'auto';
   try {
     const m = localStorage.getItem('nexus_model_mode');
     const manual = localStorage.getItem('nexus_model_manual');
     if (m === 'manual' && manual) {
       mode = 'manual';
       model = sanitizeModel(manual);
+      provider = clampProvider(localStorage.getItem('nexus_router_provider') || 'auto');
+    } else if (m === 'auto') {
+      mode = 'auto_thinking';
+      model = AUTO_THINKING_MODEL;
     }
   } catch {
     // ignore
@@ -155,7 +189,7 @@ const getRouterConfig = (): RouterConfig => {
 
   return {
     mode,
-    provider: 'auto',
+    provider,
     model,
     modelCandidates: modelCandidates || DEFAULT_GEMINI_CANDIDATES,
   };
@@ -241,17 +275,19 @@ async function postApiEnvelope<T>(path: string, body: any): Promise<ApiEnvelope<
   const payload = useAiRouting
     ? { ...body, router: aiRouter, profileContext, accountId }
     : { ...body, accountId };
+  const timeoutMs = path === '/api/interview/session' ? 150000 : 90000;
 
   const r = await fetchJsonWithTimeout(path, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload)
-  });
+  }, timeoutMs);
 
   if (!r.ok) {
     const errMsg = r.json?.error || r.text || 'Request failed';
     const e: any = new Error(errMsg);
     e.status = r.status;
+    if (r.json?.code) e.code = String(r.json.code);
     throw e;
   }
 
@@ -649,6 +685,70 @@ export const aiService = {
     return withClientRetry(async () => {
       const rows = await postApi<InterviewRecommendedJob[]>('/api/interview/recommendations', payload || {});
       return Array.isArray(rows) ? rows : [];
+    }, RETRY_PROFILE.fastGeneration.retries, RETRY_PROFILE.fastGeneration.delayMs, undefined, RETRY_PROFILE.fastGeneration.maxDelayMs);
+  },
+
+  async getProfileCareerGuidance(payload: {
+    profile: {
+      fullName?: string;
+      headline?: string;
+      summary?: string;
+      skills?: string[];
+      experience?: Array<{ role?: string; organization?: string; highlights?: string[] }>;
+      education?: Array<{ program?: string; institution?: string }>;
+      certifications?: string[];
+      learningGoal?: string;
+      region?: string;
+      preferredLanguage?: string;
+    };
+    interests?: string[];
+  }): Promise<CareerGuidanceRole[]> {
+    return withClientRetry(async () => {
+      const rows = await postApi<CareerGuidanceRole[]>('/api/profile/career-guidance', payload || {});
+      return Array.isArray(rows) ? rows : [];
+    }, RETRY_PROFILE.fastGeneration.retries, RETRY_PROFILE.fastGeneration.delayMs, undefined, RETRY_PROFILE.fastGeneration.maxDelayMs);
+  },
+
+  async getProfileCareerGuidanceRole(payload: {
+    roleTitle: string;
+    profile: {
+      fullName?: string;
+      headline?: string;
+      summary?: string;
+      skills?: string[];
+      experience?: Array<{ role?: string; organization?: string; highlights?: string[] }>;
+      education?: Array<{ program?: string; institution?: string }>;
+      certifications?: string[];
+      learningGoal?: string;
+      region?: string;
+      preferredLanguage?: string;
+    };
+    interests?: string[];
+  }): Promise<CareerGuidanceRole | null> {
+    return withClientRetry(async () => {
+      try {
+        const row = await postApi<CareerGuidanceRole>('/api/profile/career-guidance/role', payload || {});
+        if (!row || typeof row !== 'object') return null;
+        return row;
+      } catch (e: any) {
+        const status = Number(e?.status || 0);
+        const message = String(e?.message || '').toLowerCase();
+        const missingRoute = (
+          status === 404
+          || message.includes('unknown endpoint')
+          || message.includes('not found')
+          || message.includes('missing on the running backend')
+        );
+        if (!missingRoute) throw e;
+        const rows = await postApi<CareerGuidanceRole[]>('/api/profile/career-guidance', {
+          profile: payload?.profile || {},
+          interests: [String(payload?.roleTitle || '').trim(), ...(Array.isArray(payload?.interests) ? payload.interests : [])],
+        });
+        const target = String(payload?.roleTitle || '').trim().toLowerCase();
+        const list = Array.isArray(rows) ? rows : [];
+        const picked = list.find((row) => String(row?.title || '').trim().toLowerCase() === target) || list[0] || null;
+        return picked;
+      }
     }, RETRY_PROFILE.fastGeneration.retries, RETRY_PROFILE.fastGeneration.delayMs, undefined, RETRY_PROFILE.fastGeneration.maxDelayMs);
   },
 

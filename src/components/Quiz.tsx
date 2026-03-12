@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Check, X, Trophy, ChevronDown, Lightbulb, ArrowLeft, ArrowRight, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
+import { shuffleOptionsWithAnswer } from '../lib/shuffle';
 
 interface QuizProps {
   questions: {
@@ -27,7 +28,7 @@ const isPlaceholderOption = (option: string): boolean => {
 export const Quiz: React.FC<QuizProps> = ({ questions, topicLabel, onComplete }) => {
   const normalizedQuestions = useMemo(() => {
     const cleaned = (Array.isArray(questions) ? questions : [])
-      .map((q) => {
+      .map((q, qIdx) => {
         const question = String(q?.question || '').trim();
         const options = Array.isArray(q?.options)
           ? Array.from(new Set(q.options.map((opt) => String(opt).trim()).filter(Boolean)))
@@ -45,11 +46,16 @@ export const Quiz: React.FC<QuizProps> = ({ questions, topicLabel, onComplete })
 
         const explanation = String(q?.explanation || '').trim()
           || `Review the lesson content to confirm why "${limitedOptions[correctAnswer]}" is correct.`;
+        const shuffled = shuffleOptionsWithAnswer(
+          limitedOptions,
+          correctAnswer,
+          `${question}::${qIdx}`
+        );
 
         return {
           question,
-          options: limitedOptions,
-          correctAnswer,
+          options: shuffled.options,
+          correctAnswer: shuffled.correctAnswer,
           explanation,
         };
       })

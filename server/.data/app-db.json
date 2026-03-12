@@ -1348,6 +1348,13 @@
       "courseId": "course:Telegram Mini Bots Development for Web Developers",
       "scorePct": 100,
       "createdAt": "2026-03-06T16:46:51.863Z"
+    },
+    {
+      "id": "pre-1773176339318-g8j688",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:Python for Beginners: A Youth-Focused Journey to Mastery",
+      "scorePct": 100,
+      "createdAt": "2026-03-10T20:58:59.318Z"
     }
   ],
   "posttests": [
@@ -1392,6 +1399,13 @@
       "courseId": "course:Exploring Nay Toe's Acting Techniques",
       "scorePct": 100,
       "createdAt": "2026-03-06T09:19:10.603Z"
+    },
+    {
+      "id": "post-1773176339567-6jo7r7",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:Python for Beginners: A Youth-Focused Journey to Mastery",
+      "scorePct": 100,
+      "createdAt": "2026-03-10T20:58:59.567Z"
     }
   ],
   "confidence": [
@@ -1514,6 +1528,22 @@
       "phase": "pre",
       "score": 3,
       "createdAt": "2026-03-06T16:46:51.950Z"
+    },
+    {
+      "id": "conf-1773176339493-3innjm",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:Python for Beginners: A Youth-Focused Journey to Mastery",
+      "phase": "pre",
+      "score": 3,
+      "createdAt": "2026-03-10T20:58:59.493Z"
+    },
+    {
+      "id": "conf-1773176339652-bem0hd",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:Python for Beginners: A Youth-Focused Journey to Mastery",
+      "phase": "post",
+      "score": 4,
+      "createdAt": "2026-03-10T20:58:59.652Z"
     }
   ],
   "events": [
@@ -7029,6 +7059,401 @@
         "lessonNumber": 1
       },
       "date": "2026-03-09T22:16:01.456Z"
+    },
+    {
+      "id": "ev-1773176015028-7bup02",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:Python for Beginners: A Youth-Focused Journey to Mastery",
+      "type": "course_started",
+      "payload": {
+        "courseTitle": "Python for Beginners: A Youth-Focused Journey to Mastery",
+        "courseDescription": "This course is designed for youth who are starting their programming journey with Python. It aims to equip learners with foundational skills and specific knowledge to master Python programming effectively.",
+        "completionRate": 0,
+        "segment": "youth",
+        "language": "en",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-10T20:53:35.028Z"
+    },
+    {
+      "id": "ev-1773176015120-th6rgq",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:Python for Beginners: A Youth-Focused Journey to Mastery",
+      "type": "daily_active",
+      "payload": {
+        "courseTitle": "Python for Beginners: A Youth-Focused Journey to Mastery",
+        "courseDescription": "This course is designed for youth who are starting their programming journey with Python. It aims to equip learners with foundational skills and specific knowledge to master Python programming effectively.",
+        "completionRate": 0,
+        "day": "2026-03-10"
+      },
+      "date": "2026-03-10T20:53:35.120Z"
+    },
+    {
+      "id": "ev-1773176015433-goc4ue",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:Python for Beginners: A Youth-Focused Journey to Mastery",
+      "type": "lesson_started",
+      "payload": {
+        "courseTitle": "Python for Beginners: A Youth-Focused Journey to Mastery",
+        "courseDescription": "This course is designed for youth who are starting their programming journey with Python. It aims to equip learners with foundational skills and specific knowledge to master Python programming effectively.",
+        "completionRate": 0,
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-10T20:53:35.433Z"
+    },
+    {
+      "id": "ev-1773176235649-w2qtry",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:Python for Beginners: A Youth-Focused Journey to Mastery",
+      "type": "lesson_started",
+      "payload": {
+        "courseTitle": "Python for Beginners: A Youth-Focused Journey to Mastery",
+        "courseDescription": "This course is designed for youth who are starting their programming journey with Python. It aims to equip learners with foundational skills and specific knowledge to master Python programming effectively.",
+        "completionRate": 2,
+        "moduleId": "module_1",
+        "lessonNumber": 2
+      },
+      "date": "2026-03-10T20:57:15.649Z"
+    },
+    {
+      "id": "ev-1773176335385-tn0fj5",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:Python for Beginners: A Youth-Focused Journey to Mastery",
+      "type": "lesson_started",
+      "payload": {
+        "courseTitle": "Python for Beginners: A Youth-Focused Journey to Mastery",
+        "courseDescription": "This course is designed for youth who are starting their programming journey with Python. It aims to equip learners with foundational skills and specific knowledge to master Python programming effectively.",
+        "completionRate": 2,
+        "moduleId": "module_1",
+        "lessonNumber": 3
+      },
+      "date": "2026-03-10T20:58:55.385Z"
+    },
+    {
+      "id": "ev-1773176338883-mnoc7r",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:Python for Beginners: A Youth-Focused Journey to Mastery",
+      "type": "quiz_submitted",
+      "payload": {
+        "courseTitle": "Python for Beginners: A Youth-Focused Journey to Mastery",
+        "courseDescription": "This course is designed for youth who are starting their programming journey with Python. It aims to equip learners with foundational skills and specific knowledge to master Python programming effectively.",
+        "completionRate": 2,
+        "moduleId": "module_1",
+        "stepId": "3.5",
+        "passed": true,
+        "score": 1,
+        "percentage": 100,
+        "finalAssessment": true
+      },
+      "date": "2026-03-10T20:58:58.883Z"
+    },
+    {
+      "id": "ev-1773176339401-dv48ig",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:Python for Beginners: A Youth-Focused Journey to Mastery",
+      "type": "lesson_completed",
+      "payload": {
+        "courseTitle": "Python for Beginners: A Youth-Focused Journey to Mastery",
+        "courseDescription": "This course is designed for youth who are starting their programming journey with Python. It aims to equip learners with foundational skills and specific knowledge to master Python programming effectively.",
+        "completionRate": 2,
+        "moduleId": "module_1"
+      },
+      "date": "2026-03-10T20:58:59.401Z"
+    },
+    {
+      "id": "ev-1773176342832-csmcqc",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:Python for Beginners: A Youth-Focused Journey to Mastery",
+      "type": "lesson_started",
+      "payload": {
+        "courseTitle": "Python for Beginners: A Youth-Focused Journey to Mastery",
+        "courseDescription": "This course is designed for youth who are starting their programming journey with Python. It aims to equip learners with foundational skills and specific knowledge to master Python programming effectively.",
+        "completionRate": 4,
+        "moduleId": "module_2",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-10T20:59:02.832Z"
+    },
+    {
+      "id": "ev-1773202866309-2ugobq",
+      "accountId": "local-gjgfqgxq",
+      "courseId": "a50be3a6-965b-4cd2-801e-c987ee31a6a2",
+      "type": "course_started",
+      "payload": {
+        "courseTitle": "Python for Beginners: A Youth-Focused Journey to Mastery",
+        "courseDescription": "This course is designed for youth who are starting their programming journey with Python. It aims to equip learners with foundational skills and specific knowledge to master Python programming effectively.",
+        "completionRate": 0,
+        "segment": "youth",
+        "language": "ms",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-11T04:21:06.309Z"
+    },
+    {
+      "id": "ev-1773202866697-4b6mai",
+      "accountId": "local-gjgfqgxq",
+      "courseId": "a50be3a6-965b-4cd2-801e-c987ee31a6a2",
+      "type": "daily_active",
+      "payload": {
+        "courseTitle": "Python for Beginners: A Youth-Focused Journey to Mastery",
+        "courseDescription": "This course is designed for youth who are starting their programming journey with Python. It aims to equip learners with foundational skills and specific knowledge to master Python programming effectively.",
+        "completionRate": 0,
+        "day": "2026-03-11"
+      },
+      "date": "2026-03-11T04:21:06.697Z"
+    },
+    {
+      "id": "ev-1773202866807-8ev4jl",
+      "accountId": "local-gjgfqgxq",
+      "courseId": "a50be3a6-965b-4cd2-801e-c987ee31a6a2",
+      "type": "lesson_started",
+      "payload": {
+        "courseTitle": "Python for Beginners: A Youth-Focused Journey to Mastery",
+        "courseDescription": "This course is designed for youth who are starting their programming journey with Python. It aims to equip learners with foundational skills and specific knowledge to master Python programming effectively.",
+        "completionRate": 0,
+        "moduleId": "module_1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-11T04:21:06.808Z"
+    },
+    {
+      "id": "ev-1773206066665-0z327p",
+      "accountId": "091d35e6-121c-40cd-9d82-81499fa7f490",
+      "courseId": "course:Intermediate Football Skills Enhancement Course",
+      "type": "course_started",
+      "payload": {
+        "courseTitle": "Intermediate Football Skills Enhancement Course",
+        "courseDescription": "This 4-module course is designed for intermediate youth footballers in the ASEAN region, focusing on improving specific skills and addressing common misconceptions.",
+        "completionRate": 0,
+        "segment": "educator",
+        "language": "en",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-11T05:14:26.665Z"
+    },
+    {
+      "id": "ev-1773206066796-6tq45x",
+      "accountId": "091d35e6-121c-40cd-9d82-81499fa7f490",
+      "courseId": "course:Intermediate Football Skills Enhancement Course",
+      "type": "daily_active",
+      "payload": {
+        "courseTitle": "Intermediate Football Skills Enhancement Course",
+        "courseDescription": "This 4-module course is designed for intermediate youth footballers in the ASEAN region, focusing on improving specific skills and addressing common misconceptions.",
+        "completionRate": 0,
+        "day": "2026-03-11"
+      },
+      "date": "2026-03-11T05:14:26.796Z"
+    },
+    {
+      "id": "ev-1773206066913-zx4wrr",
+      "accountId": "091d35e6-121c-40cd-9d82-81499fa7f490",
+      "courseId": "course:Intermediate Football Skills Enhancement Course",
+      "type": "lesson_started",
+      "payload": {
+        "courseTitle": "Intermediate Football Skills Enhancement Course",
+        "courseDescription": "This 4-module course is designed for intermediate youth footballers in the ASEAN region, focusing on improving specific skills and addressing common misconceptions.",
+        "completionRate": 0,
+        "moduleId": "2",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-11T05:14:26.913Z"
+    },
+    {
+      "id": "ev-1773206090019-cm57jx",
+      "accountId": "091d35e6-121c-40cd-9d82-81499fa7f490",
+      "courseId": "course:Intermediate Football Skills Enhancement Course",
+      "type": "lesson_started",
+      "payload": {
+        "courseTitle": "Intermediate Football Skills Enhancement Course",
+        "courseDescription": "This 4-module course is designed for intermediate youth footballers in the ASEAN region, focusing on improving specific skills and addressing common misconceptions.",
+        "completionRate": 3,
+        "moduleId": "2",
+        "lessonNumber": 3
+      },
+      "date": "2026-03-11T05:14:50.019Z"
+    },
+    {
+      "id": "ev-1773225450694-g7cg9n",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:C++ for Game Development: A Youth-Focused Course",
+      "type": "course_started",
+      "payload": {
+        "courseTitle": "C++ for Game Development: A Youth-Focused Course",
+        "courseDescription": "This 4-module course empowers ASEAN youth to understand and apply C++ for game development, dispelling myths and focusing on practical skills.",
+        "completionRate": 0,
+        "segment": "youth",
+        "language": "en",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-11T10:37:30.694Z"
+    },
+    {
+      "id": "ev-1773225450791-zhoc2j",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:C++ for Game Development: A Youth-Focused Course",
+      "type": "daily_active",
+      "payload": {
+        "courseTitle": "C++ for Game Development: A Youth-Focused Course",
+        "courseDescription": "This 4-module course empowers ASEAN youth to understand and apply C++ for game development, dispelling myths and focusing on practical skills.",
+        "completionRate": 0,
+        "day": "2026-03-11"
+      },
+      "date": "2026-03-11T10:37:30.791Z"
+    },
+    {
+      "id": "ev-1773225451203-jdp28w",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:C++ for Game Development: A Youth-Focused Course",
+      "type": "lesson_started",
+      "payload": {
+        "courseTitle": "C++ for Game Development: A Youth-Focused Course",
+        "courseDescription": "This 4-module course empowers ASEAN youth to understand and apply C++ for game development, dispelling myths and focusing on practical skills.",
+        "completionRate": 0,
+        "moduleId": "M01",
+        "lessonNumber": null
+      },
+      "date": "2026-03-11T10:37:31.203Z"
+    },
+    {
+      "id": "ev-1773225454681-yy7i2h",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:C++ for Game Development: A Youth-Focused Course",
+      "type": "lesson_started",
+      "payload": {
+        "courseTitle": "C++ for Game Development: A Youth-Focused Course",
+        "courseDescription": "This 4-module course empowers ASEAN youth to understand and apply C++ for game development, dispelling myths and focusing on practical skills.",
+        "completionRate": 0,
+        "moduleId": "1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-11T10:37:34.681Z"
+    },
+    {
+      "id": "ev-1773227271410-otcgdo",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:React Native Fundamentals for ASEAN Youth",
+      "type": "course_started",
+      "payload": {
+        "courseTitle": "React Native Fundamentals for ASEAN Youth",
+        "courseDescription": "A practical, hands-on course designed for ASEAN youth to learn and build mobile apps using React Native.",
+        "completionRate": 0,
+        "segment": "youth",
+        "language": "en",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-11T11:07:51.410Z"
+    },
+    {
+      "id": "ev-1773227271505-wk30ls",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:React Native Fundamentals for ASEAN Youth",
+      "type": "daily_active",
+      "payload": {
+        "courseTitle": "React Native Fundamentals for ASEAN Youth",
+        "courseDescription": "A practical, hands-on course designed for ASEAN youth to learn and build mobile apps using React Native.",
+        "completionRate": 0,
+        "day": "2026-03-11"
+      },
+      "date": "2026-03-11T11:07:51.505Z"
+    },
+    {
+      "id": "ev-1773227271844-lmf679",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:React Native Fundamentals for ASEAN Youth",
+      "type": "lesson_started",
+      "payload": {
+        "courseTitle": "React Native Fundamentals for ASEAN Youth",
+        "courseDescription": "A practical, hands-on course designed for ASEAN youth to learn and build mobile apps using React Native.",
+        "completionRate": 0,
+        "moduleId": "1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-11T11:07:51.844Z"
+    },
+    {
+      "id": "ev-1773227363891-vbz1ps",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:React Native Fundamentals for ASEAN Youth",
+      "type": "daily_active",
+      "payload": {
+        "courseTitle": "React Native Fundamentals for ASEAN Youth",
+        "courseDescription": "A practical, hands-on course designed for ASEAN youth to learn and build mobile apps using React Native.",
+        "completionRate": 0,
+        "day": "2026-03-11"
+      },
+      "date": "2026-03-11T11:09:23.891Z"
+    },
+    {
+      "id": "ev-1773227364006-h7zew9",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:React Native Fundamentals for ASEAN Youth",
+      "type": "course_started",
+      "payload": {
+        "courseTitle": "React Native Fundamentals for ASEAN Youth",
+        "courseDescription": "A practical, hands-on course designed for ASEAN youth to learn and build mobile apps using React Native.",
+        "completionRate": 0,
+        "segment": "youth",
+        "language": "en",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-11T11:09:24.006Z"
+    },
+    {
+      "id": "ev-1773227364327-m6cz13",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:React Native Fundamentals for ASEAN Youth",
+      "type": "lesson_started",
+      "payload": {
+        "courseTitle": "React Native Fundamentals for ASEAN Youth",
+        "courseDescription": "A practical, hands-on course designed for ASEAN youth to learn and build mobile apps using React Native.",
+        "completionRate": 0,
+        "moduleId": "1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-11T11:09:24.327Z"
+    },
+    {
+      "id": "ev-1773251584602-o60p0z",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:Introduction to Blockchain for ASEAN Youth",
+      "type": "course_started",
+      "payload": {
+        "courseTitle": "Introduction to Blockchain for ASEAN Youth",
+        "courseDescription": "A practical, hands-on course designed to introduce ASEAN youth to the fundamentals of blockchain technology, focusing on secure and transparent record-keeping.",
+        "completionRate": 0,
+        "segment": "youth",
+        "language": "lo",
+        "lowBandwidthMode": false
+      },
+      "date": "2026-03-11T17:53:04.603Z"
+    },
+    {
+      "id": "ev-1773251584737-9kxflw",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:Introduction to Blockchain for ASEAN Youth",
+      "type": "daily_active",
+      "payload": {
+        "courseTitle": "Introduction to Blockchain for ASEAN Youth",
+        "courseDescription": "A practical, hands-on course designed to introduce ASEAN youth to the fundamentals of blockchain technology, focusing on secure and transparent record-keeping.",
+        "completionRate": 0,
+        "day": "2026-03-11"
+      },
+      "date": "2026-03-11T17:53:04.737Z"
+    },
+    {
+      "id": "ev-1773251584863-wb9qzs",
+      "accountId": "89605651-9b03-4452-95c4-16331d6855dc",
+      "courseId": "course:Introduction to Blockchain for ASEAN Youth",
+      "type": "lesson_started",
+      "payload": {
+        "courseTitle": "Introduction to Blockchain for ASEAN Youth",
+        "courseDescription": "A practical, hands-on course designed to introduce ASEAN youth to the fundamentals of blockchain technology, focusing on secure and transparent record-keeping.",
+        "completionRate": 0,
+        "moduleId": "1",
+        "lessonNumber": 1
+      },
+      "date": "2026-03-11T17:53:04.863Z"
     }
   ],
   "publicPosts": [

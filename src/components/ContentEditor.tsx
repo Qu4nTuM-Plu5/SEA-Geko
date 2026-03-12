@@ -46,10 +46,11 @@ export const ContentEditor: React.FC<ContentEditorProps> = ({
       setAnswer(res);
     } catch (error) {
       console.error('AI request failed:', error);
+      const detail = String((error as any)?.message || '').trim();
       if (mode === 'refine') {
-        onRefineError?.('Could not refine this content. Try again in a moment.');
+        onRefineError?.(detail || 'Could not refine this content. Try again in a moment.');
       } else {
-        setAnswer('Could not get a response. Try again in a moment.');
+        setAnswer(detail || 'Could not get a response. Try again in a moment.');
       }
     } finally {
       setIsUpdating(false);

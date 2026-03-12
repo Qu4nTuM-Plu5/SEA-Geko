@@ -27,7 +27,6 @@ import {
   Download,
   Home,
   Users,
-  Trophy,
   UserCircle2,
   MessageSquare,
   Share2,
@@ -45,7 +44,7 @@ import {
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { aiService } from './services/aiService';
-import { Course, AssessmentQuestion, Module, ContentType, ModuleContent, UserProfile, SupportedLocale, ImpactMetrics, DownloadState, PublicCoursePost, CvAnalysisResult, PublicCreatorProfile, LearningCourseSummary, CourseAnalyticsSummary, InterviewRecommendedJob, InterviewSession, InterviewAnswerFeedback, InterviewFinalReview } from './types';
+import { Course, AssessmentQuestion, Module, ContentType, ModuleContent, UserProfile, SupportedLocale, ImpactMetrics, DownloadState, PublicCoursePost, CvAnalysisResult, PublicCreatorProfile, LearningCourseSummary, CourseAnalyticsSummary, CareerGuidanceRole, InterviewRecommendedJob, InterviewSession, InterviewAnswerFeedback, InterviewFinalReview } from './types';
 import { SAMPLE_COURSE } from './constants';
 import { cn } from './lib/utils';
 import { Quiz } from './components/Quiz';
@@ -62,8 +61,9 @@ import { getLocale, setLocale, SUPPORTED_LOCALES, LOCALE_META, normalizeSupporte
 import { offlineStore } from './lib/offlineStore';
 
 type AppState = 'idle' | 'assessing' | 'planning' | 'generating_outline' | 'outline_review' | 'generating_content' | 'learning' | 'interview_setup' | 'interviewing';
-type HomeTab = 'learn' | 'community' | 'leaderboard' | 'profile' | 'downloads';
+type HomeTab = 'learn' | 'community' | 'profile' | 'downloads';
 type CvResubmitStatus = 'idle' | 'processing' | 'valid' | 'invalid' | 'success' | 'fail';
+type DraftCraftStage = 'outline' | 'outline_review' | 'content' | 'learning';
 
 type LessonOptions = {
   quiz: boolean;
@@ -155,6 +155,32 @@ type StepInteractionProgress = {
   lastUpdated?: string;
 };
 
+type HallOfFameCard = {
+  id: string;
+  courseId: string;
+  courseTitle: string;
+  earnedAt: string;
+  moduleCount: number;
+};
+
+type InterviewQuestionFocus = 'mixed' | 'behavioral' | 'technical';
+type InterviewSeniority = 'entry' | 'mid' | 'senior';
+
+type InterviewHistoryEntry = {
+  id: string;
+  accountId: string;
+  createdAt: string;
+  jobTitle: string;
+  questionFocus: InterviewQuestionFocus;
+  seniority: InterviewSeniority;
+  targetLanguage: string;
+  session: InterviewSession;
+  finalReview: InterviewFinalReview | null;
+  answersByQuestionId: Record<string, string>;
+  feedbackByQuestionId: Record<string, InterviewAnswerFeedback>;
+  answeredCount: number;
+};
+
 type SidebarView = 'outline' | 'resources';
 
 type CourseResourceKind = 'youtube' | 'web' | 'doc';
@@ -178,16 +204,6 @@ type MascotToastState = {
 
 type MascotMood = 'happy' | 'sad' | 'idle';
 type ComposerMode = 'default' | 'interview';
-
-type CareerGuide = {
-  id: string;
-  title: string;
-  roleSummary: string;
-  responsibilities: string[];
-  requirements: string[];
-  sources: Array<{ label: string; url: string }>;
-  keywords: string[];
-};
 
 type PublicIdentity = {
   displayName: string;
@@ -479,8 +495,37 @@ const buildCourseResources = (course: Course | null): CourseResource[] => {
 
 const isPlaceholderToken = (token: string): boolean => {
   const t = String(token || '').trim().toLowerCase();
+  const weakWords = new Set([
+    'complete',
+    'code',
+    'snippet',
+    'find',
+    'maximum',
+    'minimum',
+    'max',
+    'min',
+    'statement',
+    'question',
+    'challenge',
+    'exercise',
+    'option',
+    'answer',
+    'blank',
+    'blanks',
+    'token',
+    'tokens',
+    'value',
+    'values',
+    'term',
+    'terms',
+    'left',
+    'right',
+  ]);
+  const normalizedWords = t.replace(/[^a-z0-9]+/g, ' ').split(/\s+/).filter(Boolean);
   return (
     !t ||
+    weakWords.has(t) ||
+    (normalizedWords.length > 0 && normalizedWords.every((word) => weakWords.has(word))) ||
     /^answer\s*\d+$/.test(t) ||
     /^blank\s*\d+$/.test(t) ||
     /^option\s*[a-z0-9]+$/.test(t) ||
@@ -493,6 +538,8 @@ const extractMeaningfulTokens = (text: string, limit = 8): string[] => {
     'the', 'and', 'with', 'from', 'that', 'this', 'your', 'into', 'about', 'using',
     'each', 'left', 'right', 'blank', 'blanks', 'step', 'lesson', 'module', 'course',
     'is', 'are', 'to', 'for', 'of', 'in', 'on', 'a', 'an', 'by', 'or', 'as', 'be',
+    'complete', 'code', 'snippet', 'find', 'maximum', 'minimum', 'question', 'challenge',
+    'exercise', 'answer', 'option', 'value', 'values', 'term', 'terms', 'token', 'tokens',
   ]);
 
   const words = String(text || '')
@@ -585,6 +632,112 @@ const toQuizFallbackQuestion = (topic: string) => {
     correctAnswer: 0,
     explanation: `The correct statement is the one that aligns with the lesson focus on ${topicText}.`,
   };
+};
+
+const isFinalModuleAssessmentTitle = (value: string): boolean => {
+  const text = String(value || '').toLowerCase();
+  if (!text) return false;
+  if (text.includes('final module assessment')) return true;
+  if (text.includes('final quiz')) return true;
+  return /(?:module|final)\s+(?:assessment|quiz)/i.test(text);
+};
+
+const rebalanceQuizOptionOrder = (
+  options: string[],
+  correctAnswer: number,
+  questionIndex: number
+): { options: string[]; correctAnswer: number } => {
+  const rows = Array.isArray(options) ? options.slice(0, 4) : [];
+  if (rows.length < 2) {
+    return { options: rows, correctAnswer: 0 };
+  }
+  const safeCorrect = Math.min(Math.max(Number(correctAnswer) || 0, 0), rows.length - 1);
+  const pattern = [1, 3, 0, 2];
+  const desired = Math.min(rows.length - 1, pattern[Math.abs(questionIndex || 0) % pattern.length]);
+  if (desired === safeCorrect) {
+    return { options: rows, correctAnswer: safeCorrect };
+  }
+  const correctValue = rows[safeCorrect];
+  const others = rows.filter((_, idx) => idx !== safeCorrect);
+  const nextOptions: string[] = [];
+  let cursor = 0;
+  for (let idx = 0; idx < rows.length; idx += 1) {
+    if (idx === desired) {
+      nextOptions.push(correctValue);
+    } else {
+      nextOptions.push(others[cursor] || correctValue);
+      cursor += 1;
+    }
+  }
+  return { options: nextOptions, correctAnswer: desired };
+};
+
+const buildQuizFallbackQuestions = (topic: string, count: number): Array<{
+  question: string;
+  options: string[];
+  correctAnswer: number;
+  explanation: string;
+}> => {
+  const target = Math.max(1, Math.floor(Number(count) || 1));
+  const topicText = String(topic || '').trim() || 'this lesson';
+  const seeds = [
+    {
+      q: `What is the strongest indicator that you understand ${topicText}?`,
+      options: [
+        'You can explain it with one practical example.',
+        'You can repeat keywords without context.',
+        'You avoid applying it in scenarios.',
+        'You skip review and self-check.',
+      ],
+      a: 0,
+    },
+    {
+      q: `Which action best applies ${topicText} in real work?`,
+      options: [
+        'Map concept to a concrete use case.',
+        'Ignore constraints from the task.',
+        'Choose random steps first.',
+        'Avoid verifying outcomes.',
+      ],
+      a: 0,
+    },
+    {
+      q: `A common mistake when learning ${topicText} is to:`,
+      options: [
+        'Practice with small checkpoints.',
+        'Connect ideas to examples.',
+        'Memorize definitions only.',
+        'Reflect after each attempt.',
+      ],
+      a: 2,
+    },
+    {
+      q: `Why should you review your result after using ${topicText}?`,
+      options: [
+        'To confirm it matches the objective.',
+        'To make the process longer.',
+        'To avoid feedback loops.',
+        'To skip later improvements.',
+      ],
+      a: 0,
+    },
+  ];
+
+  const rows: Array<{ question: string; options: string[]; correctAnswer: number; explanation: string }> = [];
+  let idx = 0;
+  while (rows.length < target) {
+    const seed = seeds[idx % seeds.length];
+    const cycle = Math.floor(idx / seeds.length) + 1;
+    const balanced = rebalanceQuizOptionOrder(seed.options, seed.a, rows.length);
+    rows.push({
+      question: `${seed.q}${cycle > 1 ? ` (${cycle})` : ''}`,
+      options: balanced.options,
+      correctAnswer: balanced.correctAnswer,
+      explanation: `This option best reflects practical mastery of ${topicText}.`,
+    });
+    idx += 1;
+  }
+  return rows;
 };
 
 const normalizeFlashcardKey = (value: string): string => {
@@ -765,9 +918,20 @@ const sanitizeModuleContent = (content: ModuleContent, fallbackTitle = ''): Modu
     out.data.challenges = challenges.map((ch: any) => {
       const rawTemplate = String(ch?.codeTemplate || ch?.statement || ch?.prompt || '').trim();
       const normalizedTemplate = normalizeTemplateBlanks(rawTemplate);
-      const templateWithBlanks = countTemplateBlanks(normalizedTemplate) > 0
+      const fallbackTopic = extractMeaningfulTokens(`${out.title} ${out.lessonText || ''}`, 2).join(' ');
+      const fallbackTemplate = `In ${fallbackTopic || 'this lesson'}, ___ leads to ___.`;
+      const templateSeed = countTemplateBlanks(normalizedTemplate) > 0
         ? normalizedTemplate
-        : `${normalizedTemplate || rawTemplate || 'Complete the statement:'} ___`.trim();
+        : `${normalizedTemplate || rawTemplate || fallbackTemplate} ___`.trim();
+      const weakTemplateWords = String(templateSeed || '')
+        .replace(/[_`*#()[\]{}<>.,;:!?/\\-]+/g, ' ')
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(Boolean);
+      const weakTemplateCount = weakTemplateWords.filter((word) => isPlaceholderToken(word)).length;
+      const templateWithBlanks = (!templateSeed || (weakTemplateWords.length > 0 && weakTemplateCount >= Math.ceil(weakTemplateWords.length * 0.6)))
+        ? fallbackTemplate
+        : templateSeed;
       const initialBlankCount = Math.max(1, Math.min(4, countTemplateBlanks(templateWithBlanks)));
       const contextText = `${templateWithBlanks} ${String(ch?.instruction || '')} ${String(ch?.explanation || '')}`;
       const contextTokens = extractMeaningfulTokens(contextText, 10);
@@ -778,7 +942,7 @@ const sanitizeModuleContent = (content: ModuleContent, fallbackTitle = ''): Modu
       if (!options.length && Array.isArray(ch?.choices)) {
         options = ch.choices.map((o: any) => String(o).trim()).filter(Boolean);
       }
-      options = Array.from(new Set(options.filter((o) => !isPlaceholderToken(o))));
+      options = Array.from(new Set(options.filter((o) => !isPlaceholderToken(o) && /[a-z0-9]/i.test(o) && o.length <= 64)));
       if (!options.length) options = contextTokens.slice(0, 6);
 
       let answers = parseAnswerList(ch?.correctAnswer)
@@ -816,7 +980,7 @@ const sanitizeModuleContent = (content: ModuleContent, fallbackTitle = ''): Modu
         if (!options.includes(ans)) options.unshift(ans);
       }
       if (!options.length) {
-        options = ['Concept', 'Application', 'Principle', 'Practice'];
+        options = ['Core concept', 'Practical action', 'Expected output', 'Correct sequence'];
       }
 
       if (options.length < Math.max(3, blankCount)) {
@@ -826,7 +990,7 @@ const sanitizeModuleContent = (content: ModuleContent, fallbackTitle = ''): Modu
         }
       }
       if (options.length < Math.max(4, blankCount + 1)) {
-        for (const fallback of ['Concept', 'Application', 'Principle', 'Practice', 'Review']) {
+        for (const fallback of ['Core concept', 'Practical action', 'Expected output', 'Correct sequence', 'Key term']) {
           if (options.length >= Math.max(4, blankCount + 1)) break;
           if (!options.includes(fallback)) options.push(fallback);
         }
@@ -847,7 +1011,7 @@ const sanitizeModuleContent = (content: ModuleContent, fallbackTitle = ''): Modu
         ...ch,
         instruction: instructionRaw.length >= 18
           ? instructionRaw
-          : 'Fill in every blank from left to right using the options based on the previous lesson.',
+          : 'Fill in every blank from left to right using topic terms from this lesson.',
         codeTemplate,
         options,
         correctAnswer: answers.join(', '),
@@ -861,11 +1025,14 @@ const sanitizeModuleContent = (content: ModuleContent, fallbackTitle = ''): Modu
     const topicContext = stripStructuredStepPrefix(
       String(out.title || content.title || '').replace(/^quiz\s*:\s*/i, '').trim()
     );
+    const isFinalModuleQuiz = isFinalModuleAssessmentTitle(out.title || fallbackTitle || '');
+    const quizQuestionTarget = isFinalModuleQuiz ? 20 : 4;
+    const quizQuestionCap = isFinalModuleQuiz ? 24 : 8;
     const quizContextTokens = extractMeaningfulTokens(`${topicContext} ${String(out.lessonText || '')}`, 8)
       .map((token) => token.toLowerCase());
 
     const sanitizedQuestions = questions
-      .map((q: any) => {
+      .map((q: any, qIdx: number) => {
         const questionText = String(q?.question || q?.statement || q?.prompt || '').trim();
         let options = Array.isArray(q?.options)
           ? q.options.map((o: any) => String(o).trim()).filter(Boolean)
@@ -923,19 +1090,25 @@ const sanitizeModuleContent = (content: ModuleContent, fallbackTitle = ''): Modu
 
         const explanation = String(q?.explanation || '').trim()
           || `Review the lesson details to confirm why "${options[correctAnswer]}" is the best answer.`;
+        const balanced = rebalanceQuizOptionOrder(options, correctAnswer, qIdx);
 
         return {
           question: questionText,
-          options,
-          correctAnswer,
+          options: balanced.options,
+          correctAnswer: balanced.correctAnswer,
           explanation,
         };
       })
       .filter(Boolean) as Array<{ question: string; options: string[]; correctAnswer: number; explanation: string }>;
-
-    out.data.questions = sanitizedQuestions.length
-      ? sanitizedQuestions
-      : [toQuizFallbackQuestion(topicContext || 'this lesson')];
+    const normalizedQuestions = sanitizedQuestions.slice(0, quizQuestionCap);
+    if (!normalizedQuestions.length) {
+      normalizedQuestions.push(...buildQuizFallbackQuestions(topicContext || 'this lesson', quizQuestionTarget));
+    } else if (normalizedQuestions.length < quizQuestionTarget) {
+      normalizedQuestions.push(
+        ...buildQuizFallbackQuestions(topicContext || 'this lesson', quizQuestionTarget - normalizedQuestions.length)
+      );
+    }
+    out.data.questions = normalizedQuestions.slice(0, quizQuestionCap);
   }
 
   if (type === 'CODE_BUILDER') {
@@ -960,7 +1133,31 @@ const sanitizeModuleContent = (content: ModuleContent, fallbackTitle = ''): Modu
       return { ...ln, content: line, correctValue };
     });
     options = Array.from(new Set(options)).slice(0, 16);
-    out.data.codeBuilder = { ...cb, lines, options };
+    const avatarInstructionRaw = String(cb?.avatarInstruction || '').trim();
+    const goalRaw = String(cb?.goal || '').trim();
+    const expectedOutputRaw = String(cb?.expectedOutput || '').trim();
+    const arithmeticStyle = /\b(arithmetic|python|number|math|calculation)\b/i.test(
+      `${String(out.title || '')} ${goalRaw} ${avatarInstructionRaw}`
+    );
+    const genericGoal = !goalRaw
+      || /\b(basic arithmetic calculations|complete the code by choosing the correct pieces|fill in the blanks to complete the code)\b/i.test(goalRaw);
+    const genericAvatar = !avatarInstructionRaw
+      || /\b(use python to perform basic arithmetic calculations|fill in the blanks to complete the code)\b/i.test(avatarInstructionRaw);
+
+    out.data.codeBuilder = {
+      ...cb,
+      avatarInstruction: genericAvatar
+        ? 'Choose the token that makes each mini-goal true, then continue to the next line.'
+        : avatarInstructionRaw,
+      goal: genericGoal
+        ? (arithmeticStyle
+          ? 'Complete each mini-goal with concrete results: print 10, set buyer to "Bob", increase player score by 8, and set drink to "water".'
+          : `Complete each line to satisfy a concrete coding goal for ${String(out.title || fallbackTitle || 'this lesson').trim()}.`)
+        : goalRaw,
+      expectedOutput: expectedOutputRaw,
+      lines,
+      options,
+    };
   }
 
   return out;
@@ -1013,6 +1210,23 @@ const sanitizeCourse = (course: Course | null): Course | null => {
         })
       : [],
   };
+};
+
+const getDraftCraftStage = (course: Course | null): DraftCraftStage => {
+  const safe = sanitizeCourse(course);
+  if (!safe || !Array.isArray(safe.modules) || !safe.modules.length) return 'outline';
+  const hasAnySteps = safe.modules.some((module) => Array.isArray(module.steps) && module.steps.length > 0);
+  if (!hasAnySteps) return 'outline';
+  const hasAnyContent = safe.modules.some((module) => (
+    Array.isArray(module.steps) && module.steps.some((step) => !!step.content)
+  ));
+  const hasIncompleteContent = safe.modules.some((module) => (
+    !Array.isArray(module.steps)
+    || !module.steps.length
+    || module.steps.some((step) => step.status !== 'completed' || !step.content)
+  ));
+  if (!hasAnyContent) return 'outline_review';
+  return hasIncompleteContent ? 'content' : 'learning';
 };
 
 const defaultLessonOptions = (): LessonOptions => ({
@@ -1315,8 +1529,10 @@ const normalizeGeneratedLessonSteps = (
   let lessonTitle = '';
   const usedLessonTitles = new Set<string>();
   const numbered: Module['steps'] = [];
+  const structuredChunkSize = 7;
+  const useChunkedLessonLayout = steps.length >= structuredChunkSize && steps.length % structuredChunkSize === 0;
 
-  for (const step of steps) {
+  for (const [index, step] of steps.entries()) {
     const resolvedType = (!programmingTrack && step.type === ContentType.CODE_BUILDER)
       ? ContentType.DRAG_FILL
       : step.type;
@@ -1324,15 +1540,21 @@ const normalizeGeneratedLessonSteps = (
     const inferredLessonTopic = inferLessonTopicFromStepTitle(rawTitle, resolvedType);
     const explicitLessonMatch = rawTitle.match(/^lesson\s*\d+\s*[-:]\s*(.+)$/i);
     const explicitLessonTopic = explicitLessonMatch?.[1] ? cleanInferredLessonTopic(explicitLessonMatch[1]) : '';
+    const chunkLessonNumber = Math.floor(index / structuredChunkSize) + 1;
+    const chunkSegmentNumber = (index % structuredChunkSize) + 1;
     const startNewLesson =
-      numbered.length === 0 ||
-      resolvedType === ContentType.TEXT ||
-      segmentNumber >= 7 ||
-      (!!explicitLessonTopic && explicitLessonTopic.toLowerCase() !== lessonTitle.toLowerCase());
+      useChunkedLessonLayout
+        ? chunkSegmentNumber === 1
+        : (
+          numbered.length === 0 ||
+          resolvedType === ContentType.TEXT ||
+          segmentNumber >= structuredChunkSize ||
+          (!!explicitLessonTopic && explicitLessonTopic.toLowerCase() !== lessonTitle.toLowerCase())
+        );
 
     if (startNewLesson) {
-      lessonNumber += 1;
-      segmentNumber = 1;
+      lessonNumber = useChunkedLessonLayout ? chunkLessonNumber : lessonNumber + 1;
+      segmentNumber = useChunkedLessonLayout ? chunkSegmentNumber : 1;
       const lessonSeed = explicitLessonTopic
         || inferredLessonTopic
         || (resolvedType === ContentType.TEXT && rawTitle.includes(':') ? rawTitle.split(':')[0].trim() : '')
@@ -1342,7 +1564,7 @@ const normalizeGeneratedLessonSteps = (
         usedLessonTitles
       );
     } else {
-      segmentNumber += 1;
+      segmentNumber = useChunkedLessonLayout ? chunkSegmentNumber : segmentNumber + 1;
     }
 
     const segmentLabel = defaultSegmentLabelByType(resolvedType);
@@ -1432,7 +1654,6 @@ const ensureLessonStepCoverage = (steps: Module['steps'], moduleTitle: string = 
         { type: ContentType.VIDEO, segmentLabel: 'Video lesson' },
         { type: ContentType.CODE_BUILDER, segmentLabel: 'Interactive coding' },
         { type: ContentType.DRAG_FILL, segmentLabel: 'Gamified challenge' },
-        { type: ContentType.QUIZ, segmentLabel: 'Quiz' },
       ]
     : [
         { type: ContentType.TEXT, segmentLabel: 'Core Concepts' },
@@ -1441,14 +1662,18 @@ const ensureLessonStepCoverage = (steps: Module['steps'], moduleTitle: string = 
         { type: ContentType.VIDEO, segmentLabel: 'Video lesson' },
         { type: ContentType.POP_CARD, segmentLabel: 'Pop cards' },
         { type: ContentType.DRAG_FILL, segmentLabel: 'Gamified challenge' },
-        { type: ContentType.QUIZ, segmentLabel: 'Quiz' },
       ];
+  const requiredTypes = new Set(requiredFlow.map((item) => item.type));
 
   const moduleNumber = steps.find((step) => typeof step.moduleNumber === 'number')?.moduleNumber || 1;
   const groups = groupModuleStepsByLesson(steps);
   const complete: Module['steps'] = [];
   let cursor = 1;
   const usedLessonTitles = new Set<string>();
+  let finalQuizCandidate: Module['steps'][number] | null = null;
+  let lastLessonNumber = groups[0]?.lessonNumber || 1;
+  let lastLessonTitle = stripStructuredStepPrefix(groups[0]?.lessonTitle || '') || `Lesson ${lastLessonNumber}`;
+  let lastSegmentNumber = 0;
 
   for (const group of groups) {
     const lessonNumber = group.lessonNumber;
@@ -1458,6 +1683,7 @@ const ensureLessonStepCoverage = (steps: Module['steps'], moduleTitle: string = 
     );
     const bucket = new Map<ContentType, Module['steps'][number]>();
     const extras: Module['steps'][number][] = [];
+    let hasNonQuizContent = false;
 
     for (const { step } of group.steps) {
       const normalizedType = (!programmingTrack && step.type === ContentType.CODE_BUILDER)
@@ -1476,12 +1702,22 @@ const ensureLessonStepCoverage = (steps: Module['steps'], moduleTitle: string = 
             title: normalizedTitle,
           };
 
-      if (!bucket.has(normalizedType)) {
+      if (normalizedType === ContentType.QUIZ) {
+        finalQuizCandidate = normalizedStep;
+        continue;
+      }
+      hasNonQuizContent = true;
+
+      if (requiredTypes.has(normalizedType) && !bucket.has(normalizedType)) {
         bucket.set(normalizedType, normalizedStep);
       } else {
         extras.push(normalizedStep);
       }
     }
+
+    if (!hasNonQuizContent) continue;
+    lastLessonNumber = lessonNumber;
+    lastLessonTitle = lessonTitle;
 
     let segmentNumber = 1;
 
@@ -1538,6 +1774,25 @@ const ensureLessonStepCoverage = (steps: Module['steps'], moduleTitle: string = 
       segmentNumber += 1;
       cursor += 1;
     }
+    lastSegmentNumber = Math.max(1, segmentNumber - 1);
+  }
+
+  if (groups.length) {
+    const defaultTitle = `Final Module Assessment: ${moduleTitle || lastLessonTitle || 'Module'}`;
+    const finalTitleRaw = stripStructuredStepPrefix(finalQuizCandidate?.title || '');
+    const finalTitle = isFinalModuleAssessmentTitle(finalTitleRaw) ? finalTitleRaw : defaultTitle;
+    complete.push({
+      ...(finalQuizCandidate || {}),
+      id: String(finalQuizCandidate?.id || `step-${moduleNumber}-${lastLessonNumber}-${lastSegmentNumber + 1}-final-quiz`),
+      title: finalTitle,
+      type: ContentType.QUIZ,
+      status: finalQuizCandidate?.status || 'pending',
+      moduleNumber,
+      lessonNumber: lastLessonNumber,
+      segmentNumber: lastSegmentNumber + 1,
+      lessonTitle: lastLessonTitle || `Lesson ${lastLessonNumber}`,
+      segmentLabel: 'Final Module Assessment',
+    } as Module['steps'][number]);
   }
 
   const uniqueIds = ensureUniqueStepIds(complete, moduleNumber);
@@ -1620,23 +1875,24 @@ const buildStructuredOutlineCourse = (titleInput: string, modulesInput: OutlineM
 
 const groupModuleStepsByLesson = (steps: Module['steps']): GroupedLesson[] => {
   const groups: GroupedLesson[] = [];
+  const fallbackChunkSize = 7;
   for (const [stepIdx, step] of steps.entries()) {
-    if (typeof step.lessonNumber !== 'number') {
-      groups.push({
-        lessonNumber: groups.length + 1,
-        lessonTitle: stripStructuredStepPrefix(step.lessonTitle || step.title) || `Lesson ${groups.length + 1}`,
-        steps: [{ step, stepIdx }],
-      });
-      continue;
-    }
-    const existing = groups.find((g) => g.lessonNumber === step.lessonNumber);
+    const fallbackLessonNumber = Math.floor(stepIdx / fallbackChunkSize) + 1;
+    const lessonNumber = (typeof step.lessonNumber === 'number' && step.lessonNumber > 0)
+      ? step.lessonNumber
+      : fallbackLessonNumber;
+    const lessonTitle = stripStructuredStepPrefix(step.lessonTitle || step.title) || `Lesson ${lessonNumber}`;
+    const existing = groups.find((g) => g.lessonNumber === lessonNumber);
     if (existing) {
       existing.steps.push({ step, stepIdx });
+      if (!existing.lessonTitle && lessonTitle) {
+        existing.lessonTitle = lessonTitle;
+      }
       continue;
     }
     groups.push({
-      lessonNumber: step.lessonNumber,
-      lessonTitle: stripStructuredStepPrefix(step.lessonTitle || step.title) || `Lesson ${step.lessonNumber}`,
+      lessonNumber,
+      lessonTitle,
       steps: [{ step, stepIdx }],
     });
   }
@@ -1699,6 +1955,56 @@ const normalizePromptDraft = (value: string) => {
 };
 
 const normalizePromptInput = (value: string) => normalizePromptDraft(value).trim();
+const AUTO_FAST_MODEL = 'auto-fast';
+const AUTO_THINKING_MODEL = 'auto-thinking';
+
+const stripInterviewPromptScaffolding = (value: string): string => {
+  let text = normalizePromptInput(value)
+    .replace(/^[`"']+|[`"']+$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  if (!text) return '';
+  const hasInterviewIntent = /\b(interview|questions?|questionnaire|guide|prep(?:aration)?|simulation)\b/i.test(text);
+  if (hasInterviewIntent) {
+    const afterFor = text.match(/\b(?:for|about|regarding|on)\s+(.+)$/i);
+    if (afterFor?.[1]) text = String(afterFor[1]).trim();
+    text = text
+      .replace(/^(?:an?\s+)?(?:interview\s+)?(?:questions?|questionnaire|guide|prep(?:aration)?|simulation)\s*(?:for|about|regarding|on)?\s*/i, '')
+      .replace(/^(?:generate|create|write|give|make|prepare|show|need|want)\s+/i, '')
+      .trim();
+  }
+  text = text
+    .replace(/^for\s+/i, '')
+    .replace(/\b(?:interview\s+questions?|questionnaire|interview\s+guide|interview\s+prep(?:aration)?|interview\s+simulation)\b$/i, '')
+    .replace(/^[\s:;,.-]+|[\s:;,.-]+$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  if (/^[a-z0-9][a-z0-9\s/-]*$/i.test(text)) {
+    text = text
+      .split(/\s+/)
+      .map((word) => word ? (word.charAt(0).toUpperCase() + word.slice(1)) : word)
+      .join(' ');
+  }
+  return text.slice(0, 120);
+};
+
+const getInterviewRoleValidationError = (value: string): string | null => {
+  const role = stripInterviewPromptScaffolding(value);
+  if (!role) return 'Select a recommended job or type the target job title first.';
+  if (role.length < 2) return 'Target role is too short.';
+  const lower = String(value || '').toLowerCase();
+  const unsafePatterns = [
+    /\b(?:porn|porno|xxx|nsfw|nude|nudity|erotic|fetish|escort|brothel|onlyfans|sexual?|sex)\b/i,
+    /\b(?:hate\s*speech|white\s*power|heil\s*hitler|nazi\s*propaganda|ethnic\s*cleansing|genocide|terrorist\s*recruitment)\b/i,
+    /\b(?:kill\s+all|rape|slur)\b/i,
+  ];
+  if (unsafePatterns.some((pattern) => pattern.test(lower))) {
+    return 'Interview role contains disallowed sexual or hate content. Please enter a professional job title.';
+  }
+  return null;
+};
+
+const normalizeInterviewRoleInput = (value: string): string => stripInterviewPromptScaffolding(value);
 
 const normalizeOutlineSnapshot = (value: string): string => {
   return String(value || '')
@@ -1730,9 +2036,8 @@ const resolveOutlineTargetSnapshot = (module: Module, target: OutlineEditTarget)
     const lessonNames = lessonGroups
       .slice(0, 6)
       .map((group) => `${group.lessonNumber}. ${group.lessonTitle}`);
-    return lessonNames.length
-      ? lessonNames.join(' | ')
-      : `${module.title} (${module.steps.length} sub-contents)`;
+    return [module.title, lessonNames.join(' | ')].filter(Boolean).join(' -> ')
+      || `${module.title} (${module.steps.length} sub-contents)`;
   }
 
   if (target.type === 'lesson') {
@@ -1773,6 +2078,630 @@ const resolveOutlineTargetSnapshot = (module: Module, target: OutlineEditTarget)
   }
 
   return '';
+};
+
+const promptHasDeleteIntent = (value: string): boolean => /\b(delete|remove|drop)\b/i.test(value);
+
+const promptRequestsModuleDelete = (value: string): boolean => (
+  /\b(delete|remove|drop)\b[\s\S]{0,30}\bmodule\b/i.test(value)
+  || /\bmodule\b[\s\S]{0,30}\b(delete|remove|drop)\b/i.test(value)
+);
+
+const promptHasReplaceIntent = (value: string): boolean => (
+  /\b(replace|swap|substitute|change|update|revise|rework|rewrite)\b/i.test(value)
+);
+
+const extractRequestedLessonAddCount = (value: string): number => {
+  const prompt = normalizePromptInput(value);
+  if (!prompt) return 0;
+
+  const explicitPatterns = [
+    /\b(?:add|insert|append|include|create|expand)\s+(\d+)\s+(?:more\s+)?lessons?\b/i,
+    /\b(\d+)\s+(?:more\s+)?lessons?\b/i,
+  ];
+  for (const pattern of explicitPatterns) {
+    const match = prompt.match(pattern);
+    if (!match?.[1]) continue;
+    const parsed = Number(match[1]);
+    if (Number.isFinite(parsed) && parsed > 0) return Math.min(6, Math.floor(parsed));
+  }
+
+  if (/\banother\s+lesson\b/i.test(prompt)) return 1;
+  if (/\b(?:more|extra|additional)\s+lessons?\b/i.test(prompt)) return 1;
+  return 0;
+};
+
+const promptHasAddLessonIntent = (value: string): boolean => (
+  (() => {
+    const prompt = normalizePromptInput(value);
+    if (!prompt || promptHasReplaceIntent(prompt)) return false;
+    if (!/\blessons?\b/i.test(prompt)) return false;
+    if (/\b(add|insert|append|include|create|expand)\b[\s\S]{0,24}\blessons?\b/i.test(prompt)) return true;
+    return extractRequestedLessonAddCount(prompt) > 0;
+  })()
+);
+
+const promptHasAddSubcontentIntent = (value: string): boolean => (
+  (() => {
+    const prompt = normalizePromptInput(value);
+    if (!prompt || promptHasReplaceIntent(prompt)) return false;
+    if (!/\b(sub[\s-]?content|subcontent|step|segment)\b/i.test(prompt)) return false;
+    return (
+      /\b(add|insert|append|include|create|expand)\b[\s\S]{0,24}\b(sub[\s-]?content|subcontent|step|segment)\b/i.test(prompt)
+      || /\b(?:more|extra|additional)\s+(?:sub[\s-]?contents?|subcontents?|steps?|segments?)\b/i.test(prompt)
+      || /\banother\s+(?:sub[\s-]?content|subcontent|step|segment)\b/i.test(prompt)
+    );
+  })()
+);
+
+const extractRenameTargetFromPrompt = (value: string): string => {
+  const prompt = normalizePromptInput(value);
+  if (!prompt) return '';
+
+  const quoted = prompt.match(/["'`]{1}([^"'`]{2,140})["'`]{1}/);
+  if (quoted?.[1]) return normalizePromptInput(quoted[1]).slice(0, 140);
+
+  const patterns = [
+    /(?:rename|retitle|change|update|set)\s+(?:the\s+)?(?:title|name|topic)?\s*(?:to|as|into)\s*[:\-]?\s*(.+)$/i,
+    /(?:title|name|topic)\s*(?:to|as|into)\s*[:\-]?\s*(.+)$/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = prompt.match(pattern);
+    if (!match?.[1]) continue;
+    const candidate = normalizePromptInput(String(match[1] || ''))
+      .replace(/[.!?]+$/g, '')
+      .replace(/^(?:this|that|it)\b\s*/i, '')
+      .trim();
+    if (!candidate) continue;
+    if (/^(?:the\s+)?(?:module|lesson|sub[\s-]?content)$/i.test(candidate)) continue;
+    return candidate.slice(0, 140);
+  }
+
+  return '';
+};
+
+const composeStructuredStepTitle = (lessonTitle: string, stepTitle: string, type: ContentType): string => {
+  const cleaned = stripStructuredStepPrefix(String(stepTitle || '').trim());
+  if (!cleaned || isGenericSubContentTitle(cleaned)) {
+    return buildSubContentTitle(lessonTitle, type);
+  }
+  const tail = cleaned.includes(':')
+    ? cleaned.split(':').slice(1).join(':').trim() || cleaned
+    : cleaned;
+  if (!tail || isGenericSubContentTitle(tail)) {
+    return buildSubContentTitle(lessonTitle, type);
+  }
+  return `${lessonTitle}: ${tail}`;
+};
+
+const cloneGroupedLessons = (groups: GroupedLesson[]): GroupedLesson[] => (
+  groups.map((group) => ({
+    lessonNumber: group.lessonNumber,
+    lessonTitle: group.lessonTitle,
+    steps: group.steps.map(({ step, stepIdx }) => ({ step: { ...step }, stepIdx })),
+  }))
+);
+
+const buildAdditionalLessonGroups = (
+  currentGroups: GroupedLesson[],
+  generatedGroups: GroupedLesson[],
+  moduleTitle: string,
+  addCount: number
+): GroupedLesson[] => {
+  if (!currentGroups.length || !generatedGroups.length || addCount <= 0) return [];
+
+  const signatureOf = (group: GroupedLesson): string => normalizeOutlineSnapshot(
+    `${group.lessonTitle}|${group.steps.slice(0, 7).map(({ step }) => `${step.type}:${resolveStepTitle(step)}`).join('|')}`
+  );
+
+  const existingSignatures = new Set(currentGroups.map(signatureOf));
+  const usedLessonTitles = new Set(
+    currentGroups
+      .map((group) => normalizeTopicFragment(group.lessonTitle))
+      .filter(Boolean)
+      .map((title) => String(title).toLowerCase())
+  );
+
+  const distinctCandidates = generatedGroups
+    .map((group) => cloneGroupedLessons([group])[0])
+    .filter((group) => !existingSignatures.has(signatureOf(group)));
+
+  const additions: GroupedLesson[] = [];
+  let cursor = 0;
+  while (additions.length < addCount) {
+    const source = distinctCandidates[cursor] || generatedGroups[cursor % generatedGroups.length];
+    if (!source) break;
+    const clone = cloneGroupedLessons([source])[0];
+    const lessonOrdinal = currentGroups.length + additions.length + 1;
+    const baseTitle = normalizeTopicFragment(clone.lessonTitle || source.lessonTitle || `Lesson ${lessonOrdinal}`)
+      || `Lesson ${lessonOrdinal}`;
+    const uniqueTitle = ensureUniqueLessonTitle(
+      buildLessonTitle(`Additional ${baseTitle}`, moduleTitle, lessonOrdinal),
+      usedLessonTitles
+    );
+    clone.lessonTitle = uniqueTitle;
+    clone.steps = clone.steps.map(({ step, stepIdx }) => ({
+      step: toPendingStep({
+        ...step,
+        lessonTitle: uniqueTitle,
+        title: composeStructuredStepTitle(uniqueTitle, step.title, step.type),
+      }),
+      stepIdx,
+    }));
+    additions.push(clone);
+    existingSignatures.add(signatureOf(clone));
+    cursor += 1;
+  }
+
+  return additions;
+};
+
+const findLessonIndexForTarget = (groups: GroupedLesson[], target: OutlineEditTarget): number => {
+  if (!groups.length) return -1;
+  if (typeof target.lessonNumber === 'number') {
+    const byNumber = groups.findIndex((group) => group.lessonNumber === target.lessonNumber);
+    if (byNumber >= 0) return byNumber;
+  }
+  if (target.type === 'subcontent' && target.stepId) {
+    const byStepId = groups.findIndex((group) => group.steps.some(({ step }) => step.id === target.stepId));
+    if (byStepId >= 0) return byStepId;
+  }
+  return 0;
+};
+
+const findStepIndexForTarget = (group: GroupedLesson, target: OutlineEditTarget): number => {
+  if (!group?.steps?.length) return -1;
+  if (target.stepId) {
+    const byId = group.steps.findIndex(({ step }) => step.id === target.stepId);
+    if (byId >= 0) return byId;
+  }
+  if (typeof target.segmentNumber === 'number') {
+    const bySegment = group.steps.findIndex(({ step, stepIdx }) => {
+      const segment = typeof step.segmentNumber === 'number' ? step.segmentNumber : stepIdx + 1;
+      return segment === target.segmentNumber;
+    });
+    if (bySegment >= 0) return bySegment;
+    const byPosition = target.segmentNumber - 1;
+    if (byPosition >= 0 && byPosition < group.steps.length) return byPosition;
+  }
+  if (target.stepTitle) {
+    const needle = normalizeOutlineSnapshot(stripStructuredStepPrefix(target.stepTitle));
+    const byTitle = group.steps.findIndex(({ step }) => (
+      normalizeOutlineSnapshot(stripStructuredStepPrefix(resolveStepTitle(step))) === needle
+    ));
+    if (byTitle >= 0) return byTitle;
+  }
+  return 0;
+};
+
+const buildModuleLessonMapContext = (module: Module): string => {
+  const lessonGroups = groupModuleStepsByLesson(Array.isArray(module.steps) ? module.steps : []);
+  if (!lessonGroups.length) return '- No lessons available.';
+  return lessonGroups
+    .map((group) => {
+      const summary = group.steps
+        .slice(0, 8)
+        .map(({ step, stepIdx }) => {
+          const segment = typeof step.segmentNumber === 'number' ? step.segmentNumber : stepIdx + 1;
+          return `${group.lessonNumber}.${segment} ${resolveStepTitle(step)}`;
+        })
+        .join(' | ');
+      return `${group.lessonNumber}. ${group.lessonTitle}${summary ? ` -> ${summary}` : ''}`;
+    })
+    .join('\n');
+};
+
+const rebuildModuleStepsFromLessonGroups = (module: Module, groups: GroupedLesson[]): Module['steps'] => {
+  const moduleNumber = module.steps.find((step) => typeof step.moduleNumber === 'number')?.moduleNumber || 1;
+  const normalizedGroups = groups.filter((group) => Array.isArray(group.steps) && group.steps.length > 0);
+  const rebuilt: Module['steps'] = [];
+  const usedLessonTitles = new Set<string>();
+  const programmingTrack = isProgrammingTopic(module.title);
+
+  for (let groupIdx = 0; groupIdx < normalizedGroups.length; groupIdx += 1) {
+    const group = normalizedGroups[groupIdx];
+    const lessonNumber = groupIdx + 1;
+    const lessonTitle = ensureUniqueLessonTitle(
+      buildLessonTitle(String(group.lessonTitle || `Lesson ${lessonNumber}`), module.title, lessonNumber),
+      usedLessonTitles
+    );
+
+    for (let stepIdx = 0; stepIdx < group.steps.length; stepIdx += 1) {
+      const baseStep = group.steps[stepIdx]?.step;
+      if (!baseStep) continue;
+      const normalizedType = (!programmingTrack && baseStep.type === ContentType.CODE_BUILDER)
+        ? ContentType.DRAG_FILL
+        : baseStep.type;
+      rebuilt.push({
+        ...baseStep,
+        type: normalizedType,
+        title: composeStructuredStepTitle(lessonTitle, baseStep.title, normalizedType),
+        status: baseStep.status || 'pending',
+        moduleNumber,
+        lessonNumber,
+        segmentNumber: stepIdx + 1,
+        lessonTitle,
+        segmentLabel: defaultSegmentLabelByType(normalizedType),
+      });
+    }
+  }
+
+  return ensureDistinctLessonTitles(ensureUniqueStepIds(rebuilt, moduleNumber));
+};
+
+const toPendingStep = (step: Module['steps'][number]): Module['steps'][number] => ({
+  ...step,
+  content: undefined,
+  status: 'pending',
+});
+
+const pickGeneratedLessonGroupForTarget = (
+  generatedGroups: GroupedLesson[],
+  targetLessonIndex: number,
+  sourceLesson: GroupedLesson | null,
+  prompt: string
+): GroupedLesson | null => {
+  if (!generatedGroups.length) return null;
+  if (targetLessonIndex >= 0 && generatedGroups[targetLessonIndex]) {
+    return cloneGroupedLessons([generatedGroups[targetLessonIndex]])[0];
+  }
+
+  const preferred = extractRenameTargetFromPrompt(prompt) || String(sourceLesson?.lessonTitle || '');
+  const tokens = normalizeOutlineSnapshot(preferred).split(' ').filter((token) => token.length >= 3);
+
+  let best: GroupedLesson | null = null;
+  let bestScore = -1;
+
+  for (const candidate of generatedGroups) {
+    const haystack = normalizeOutlineSnapshot(
+      `${candidate.lessonTitle} ${candidate.steps.map(({ step }) => resolveStepTitle(step)).join(' ')}`
+    );
+    let score = 0;
+    for (const token of tokens) {
+      if (haystack.includes(token)) score += 1;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = candidate;
+    }
+  }
+
+  return best ? cloneGroupedLessons([best])[0] : cloneGroupedLessons([generatedGroups[0]])[0];
+};
+
+const pickGeneratedStepForTarget = (
+  generatedGroup: GroupedLesson | null,
+  target: OutlineEditTarget,
+  sourceStep: Module['steps'][number] | undefined,
+  prompt: string
+): Module['steps'][number] | null => {
+  if (!generatedGroup?.steps?.length) return null;
+
+  if (typeof target.segmentNumber === 'number') {
+    const bySegment = generatedGroup.steps.find(({ step, stepIdx }) => {
+      const segment = typeof step.segmentNumber === 'number' ? step.segmentNumber : stepIdx + 1;
+      return segment === target.segmentNumber;
+    });
+    if (bySegment?.step) return { ...bySegment.step };
+    const byPosition = generatedGroup.steps[target.segmentNumber - 1];
+    if (byPosition?.step) return { ...byPosition.step };
+  }
+
+  if (sourceStep) {
+    const byType = generatedGroup.steps.find(({ step }) => step.type === sourceStep.type);
+    if (byType?.step) return { ...byType.step };
+  }
+
+  const renameHint = extractRenameTargetFromPrompt(prompt);
+  if (renameHint) {
+    const needle = normalizeOutlineSnapshot(renameHint);
+    const byTitle = generatedGroup.steps.find(({ step }) => (
+      normalizeOutlineSnapshot(resolveStepTitle(step)).includes(needle)
+    ));
+    if (byTitle?.step) return { ...byTitle.step };
+  }
+
+  return { ...generatedGroup.steps[0].step };
+};
+
+const applyForcedScopedReplacementToModule = (
+  module: Module,
+  target: OutlineEditTarget,
+  prompt: string
+): Module => {
+  if (target.type === 'module') return module;
+
+  const instruction = normalizePromptInput(prompt);
+  const renameTo = extractRenameTargetFromPrompt(instruction);
+  const groups = cloneGroupedLessons(groupModuleStepsByLesson(module.steps));
+  if (!groups.length) return module;
+
+  const lessonIndex = findLessonIndexForTarget(groups, target);
+  if (lessonIndex < 0 || !groups[lessonIndex]) return module;
+
+  if (target.type === 'lesson') {
+    const lesson = groups[lessonIndex];
+    const usedTitles = new Set(
+      groups
+        .filter((_, idx) => idx !== lessonIndex)
+        .map((g) => normalizeTopicFragment(g.lessonTitle))
+        .filter(Boolean)
+        .map((title) => String(title).toLowerCase())
+    );
+    const fallbackBase = normalizeTopicFragment(lesson.lessonTitle) || `Lesson ${lesson.lessonNumber}`;
+    const nextLessonTitle = ensureUniqueLessonTitle(
+      buildLessonTitle(renameTo || `Alternative ${fallbackBase}`, module.title, lessonIndex + 1),
+      usedTitles
+    );
+    lesson.lessonTitle = nextLessonTitle;
+    lesson.steps = lesson.steps.map(({ step, stepIdx }) => ({
+      step: toPendingStep({
+        ...step,
+        lessonTitle: nextLessonTitle,
+        title: composeStructuredStepTitle(nextLessonTitle, step.title, step.type),
+      }),
+      stepIdx,
+    }));
+    return { ...module, steps: rebuildModuleStepsFromLessonGroups(module, groups) };
+  }
+
+  const lesson = groups[lessonIndex];
+  const stepIndex = findStepIndexForTarget(lesson, target);
+  if (stepIndex < 0 || !lesson.steps[stepIndex]) return module;
+
+  const baseStep = lesson.steps[stepIndex].step;
+  const fallbackTail = `Alternative ${defaultSegmentLabelByType(baseStep.type)}`;
+  const nextTitle = composeStructuredStepTitle(
+    lesson.lessonTitle,
+    renameTo || fallbackTail,
+    baseStep.type
+  );
+  lesson.steps[stepIndex] = {
+    step: toPendingStep({
+      ...baseStep,
+      title: nextTitle,
+    }),
+    stepIdx: lesson.steps[stepIndex].stepIdx,
+  };
+  return { ...module, steps: rebuildModuleStepsFromLessonGroups(module, groups) };
+};
+
+type DirectOutlineEditResult = {
+  module: Module;
+  applied: boolean;
+  blockedReason?: string;
+};
+
+const applyDirectOutlineEditToModule = (
+  module: Module,
+  target: OutlineEditTarget,
+  prompt: string
+): DirectOutlineEditResult => {
+  const instruction = normalizePromptInput(prompt);
+  if (!instruction) return { module, applied: false };
+
+  if (target.type === 'module' && promptRequestsModuleDelete(instruction)) {
+    return {
+      module,
+      applied: true,
+      blockedReason: 'Module deletion is not allowed. Delete lessons or sub-contents instead.',
+    };
+  }
+
+  const renameTo = extractRenameTargetFromPrompt(instruction);
+  if (renameTo) {
+    if (target.type === 'module') {
+      if (normalizeOutlineSnapshot(module.title) === normalizeOutlineSnapshot(renameTo)) {
+        return { module, applied: true };
+      }
+      return { module: { ...module, title: renameTo }, applied: true };
+    }
+
+    const groups = cloneGroupedLessons(groupModuleStepsByLesson(module.steps));
+    const lessonIndex = findLessonIndexForTarget(groups, target);
+    if (lessonIndex < 0 || !groups[lessonIndex]) {
+      return { module, applied: true, blockedReason: 'Could not find the targeted lesson.' };
+    }
+
+    if (target.type === 'lesson') {
+      const lesson = groups[lessonIndex];
+      lesson.lessonTitle = renameTo;
+      lesson.steps = lesson.steps.map(({ step, stepIdx }) => ({
+        step: {
+          ...step,
+          title: composeStructuredStepTitle(renameTo, step.title, step.type),
+          lessonTitle: renameTo,
+        },
+        stepIdx,
+      }));
+      return {
+        module: { ...module, steps: rebuildModuleStepsFromLessonGroups(module, groups) },
+        applied: true,
+      };
+    }
+
+    const lesson = groups[lessonIndex];
+    const stepIndex = findStepIndexForTarget(lesson, target);
+    if (stepIndex < 0 || !lesson.steps[stepIndex]) {
+      return { module, applied: true, blockedReason: 'Could not find the targeted sub-content.' };
+    }
+    const baseStep = lesson.steps[stepIndex].step;
+    lesson.steps[stepIndex] = {
+      step: {
+        ...baseStep,
+        title: composeStructuredStepTitle(lesson.lessonTitle, renameTo, baseStep.type),
+      },
+      stepIdx: lesson.steps[stepIndex].stepIdx,
+    };
+    return {
+      module: { ...module, steps: rebuildModuleStepsFromLessonGroups(module, groups) },
+      applied: true,
+    };
+  }
+
+  if (!promptHasDeleteIntent(instruction)) {
+    return { module, applied: false };
+  }
+
+  if (target.type === 'lesson') {
+    const groups = cloneGroupedLessons(groupModuleStepsByLesson(module.steps));
+    const lessonIndex = findLessonIndexForTarget(groups, target);
+    if (lessonIndex < 0 || !groups[lessonIndex]) {
+      return { module, applied: true, blockedReason: 'Could not find the targeted lesson.' };
+    }
+    if (groups.length <= 1) {
+      return {
+        module,
+        applied: true,
+        blockedReason: 'At least one lesson must remain in a module.',
+      };
+    }
+    groups.splice(lessonIndex, 1);
+    return {
+      module: { ...module, steps: rebuildModuleStepsFromLessonGroups(module, groups) },
+      applied: true,
+    };
+  }
+
+  if (target.type === 'subcontent') {
+    const groups = cloneGroupedLessons(groupModuleStepsByLesson(module.steps));
+    const lessonIndex = findLessonIndexForTarget(groups, target);
+    if (lessonIndex < 0 || !groups[lessonIndex]) {
+      return { module, applied: true, blockedReason: 'Could not find the targeted lesson.' };
+    }
+    const lesson = groups[lessonIndex];
+    const stepIndex = findStepIndexForTarget(lesson, target);
+    if (stepIndex < 0 || !lesson.steps[stepIndex]) {
+      return { module, applied: true, blockedReason: 'Could not find the targeted sub-content.' };
+    }
+    if (lesson.steps.length <= 1) {
+      return {
+        module,
+        applied: true,
+        blockedReason: 'A lesson must keep at least one sub-content.',
+      };
+    }
+    lesson.steps.splice(stepIndex, 1);
+    return {
+      module: { ...module, steps: rebuildModuleStepsFromLessonGroups(module, groups) },
+      applied: true,
+    };
+  }
+
+  return { module, applied: false };
+};
+
+const applyGeneratedScopedEditToModule = (
+  module: Module,
+  target: OutlineEditTarget,
+  prompt: string,
+  generatedSteps: Module['steps']
+): Module => {
+  if (!Array.isArray(generatedSteps) || !generatedSteps.length) return module;
+  const instruction = normalizePromptInput(prompt);
+
+  if (target.type === 'module') {
+    if (promptHasAddLessonIntent(instruction)) {
+      const currentGroups = cloneGroupedLessons(groupModuleStepsByLesson(module.steps));
+      const generatedGroups = cloneGroupedLessons(groupModuleStepsByLesson(generatedSteps));
+      if (currentGroups.length && generatedGroups.length) {
+        const requestedAddCount = Math.max(1, extractRequestedLessonAddCount(instruction));
+        const additions = buildAdditionalLessonGroups(
+          currentGroups,
+          generatedGroups,
+          module.title,
+          requestedAddCount
+        );
+        if (additions.length) {
+          return {
+            ...module,
+            steps: rebuildModuleStepsFromLessonGroups(module, [...currentGroups, ...additions]),
+          };
+        }
+      }
+    }
+    return { ...module, steps: generatedSteps.map(toPendingStep) };
+  }
+
+  const currentGroups = cloneGroupedLessons(groupModuleStepsByLesson(module.steps));
+  if (!currentGroups.length) return module;
+  const generatedGroups = cloneGroupedLessons(groupModuleStepsByLesson(generatedSteps));
+  if (!generatedGroups.length) return module;
+
+  const lessonIndex = findLessonIndexForTarget(currentGroups, target);
+  if (lessonIndex < 0 || !currentGroups[lessonIndex]) return module;
+
+  if (target.type === 'lesson') {
+    const replacement = pickGeneratedLessonGroupForTarget(
+      generatedGroups,
+      lessonIndex,
+      currentGroups[lessonIndex],
+      instruction
+    );
+    if (!replacement) return module;
+
+    if (promptHasAddLessonIntent(instruction)) {
+      const requestedAddCount = Math.max(1, extractRequestedLessonAddCount(instruction));
+      const additionPool = [replacement, ...generatedGroups];
+      const additions = buildAdditionalLessonGroups(
+        currentGroups,
+        additionPool,
+        module.title,
+        requestedAddCount
+      );
+      if (additions.length) {
+        currentGroups.splice(Math.min(lessonIndex + 1, currentGroups.length), 0, ...additions);
+      } else {
+        currentGroups.splice(Math.min(lessonIndex + 1, currentGroups.length), 0, replacement);
+      }
+    } else {
+      currentGroups[lessonIndex] = replacement;
+    }
+    return { ...module, steps: rebuildModuleStepsFromLessonGroups(module, currentGroups) };
+  }
+
+  if (target.type === 'subcontent') {
+    const lesson = currentGroups[lessonIndex];
+    const stepIndex = findStepIndexForTarget(lesson, target);
+    if (stepIndex < 0 || !lesson.steps[stepIndex]) return module;
+
+    const sourceGroup = pickGeneratedLessonGroupForTarget(
+      generatedGroups,
+      lessonIndex,
+      lesson,
+      instruction
+    ) || generatedGroups[0];
+    const sourceStep = pickGeneratedStepForTarget(
+      sourceGroup,
+      target,
+      lesson.steps[stepIndex]?.step,
+      instruction
+    );
+    if (!sourceStep) return module;
+
+    if (promptHasAddSubcontentIntent(instruction)) {
+      const newStep = toPendingStep({
+        ...sourceStep,
+        id: `step-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      });
+      lesson.steps.splice(stepIndex + 1, 0, { step: newStep, stepIdx: stepIndex + 1 });
+    } else {
+      const currentStep = lesson.steps[stepIndex].step;
+      lesson.steps[stepIndex] = {
+        step: {
+          ...currentStep,
+          ...toPendingStep(sourceStep),
+          id: currentStep.id,
+        },
+        stepIdx: lesson.steps[stepIndex].stepIdx,
+      };
+    }
+
+    return { ...module, steps: rebuildModuleStepsFromLessonGroups(module, currentGroups) };
+  }
+
+  return module;
 };
 
 const getPromptValidationError = (value: string): string | null => {
@@ -1977,23 +2906,6 @@ const normalizeExtractedText = (value: string): string => {
     if (deduped.length >= 1200) break;
   }
   return deduped.join('\n').replace(/\n{3,}/g, '\n\n').trim();
-};
-
-const extractPdfLikeText = (raw: string): string => {
-  const extracted: string[] = [];
-  const re = /\(([^()]{3,500})\)/g;
-  let match: RegExpExecArray | null = null;
-  while ((match = re.exec(raw)) !== null) {
-    const cleaned = String(match[1] || '')
-      .replace(/\\[nrt]/g, ' ')
-      .replace(/\\\d{3}/g, ' ')
-      .replace(/\\\(/g, '(')
-      .replace(/\\\)/g, ')')
-      .trim();
-    if (cleaned.length >= 3) extracted.push(cleaned);
-    if (extracted.length >= 500) break;
-  }
-  return normalizeExtractedText(extracted.join('\n'));
 };
 
 const readUInt16LE = (bytes: Uint8Array, offset: number): number => {
@@ -2521,11 +3433,6 @@ const extractCvTextFromFile = async (file: File): Promise<{ text: string; profil
 
   const raw = new TextDecoder('latin1').decode(arrayBuffer);
 
-  if (mime === 'application/pdf' || name.endsWith('.pdf')) {
-    const pdfText = extractPdfLikeText(raw);
-    if (pdfText) return { text: pdfText.slice(0, 24000), profileImageDataUrl: '' };
-  }
-
   // Lightweight fallback for binary docs when no parser dependency is available.
   const fallback = normalizeExtractedText(
     raw
@@ -2540,9 +3447,50 @@ const formatLocaleLabel = (loc: SupportedLocale): string => {
   return `${meta.country} - ${meta.name}`;
 };
 
-const emojiFontStyle: React.CSSProperties = {
-  fontFamily: '"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif',
+const getFlagImageSrc = (countryCode: string): string => {
+  const normalized = String(countryCode || '').trim().toLowerCase();
+  if (!/^[a-z]{2}$/.test(normalized)) return '';
+  return `https://flagcdn.com/24x18/${normalized}.png`;
 };
+
+type LocaleFlagProps = {
+  countryCode: string;
+  className?: string;
+};
+
+function LocaleFlag({ countryCode, className }: LocaleFlagProps) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const normalizedCountry = String(countryCode || '').trim().toUpperCase();
+  const src = getFlagImageSrc(normalizedCountry);
+
+  if (!src || imageFailed) {
+    return (
+      <span
+        aria-hidden
+        className={cn(
+          'inline-flex h-[14px] min-w-[22px] items-center justify-center rounded-[3px] border border-slate-300 bg-slate-100 px-1 text-[9px] font-semibold leading-none text-slate-700',
+          className
+        )}
+      >
+        {normalizedCountry || '--'}
+      </span>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt=""
+      aria-hidden
+      width={24}
+      height={18}
+      loading="lazy"
+      decoding="async"
+      className={cn('h-[14px] w-[22px] rounded-[3px] border border-slate-300 object-cover', className)}
+      onError={() => setImageFailed(true)}
+    />
+  );
+}
 
 type LocaleMenuSelectProps = {
   id: string;
@@ -2594,9 +3542,7 @@ function LocaleMenuSelect({
         )}
       >
         <span className="inline-flex items-center gap-2 min-w-0">
-          <span aria-hidden className="text-sm leading-none" style={emojiFontStyle}>
-            {activeMeta.flag || activeMeta.country}
-          </span>
+          <LocaleFlag countryCode={activeMeta.country} />
           <span className="truncate font-semibold">{formatLocaleLabel(value)}</span>
         </span>
         <ChevronDown className={cn('w-4 h-4 text-slate-500 transition-transform', open ? 'rotate-180' : '')} />
@@ -2633,9 +3579,7 @@ function LocaleMenuSelect({
                     active ? 'bg-emerald-50 text-emerald-800' : 'text-slate-700 hover:bg-slate-50'
                   )}
                 >
-                  <span aria-hidden className="text-sm leading-none" style={emojiFontStyle}>
-                    {meta.flag || meta.country}
-                  </span>
+                  <LocaleFlag countryCode={meta.country} />
                   <span className="truncate">{formatLocaleLabel(loc)}</span>
                 </button>
               );
@@ -2828,140 +3772,198 @@ const normalizeInterestTerms = (...values: string[]): string[] => {
   return out;
 };
 
-const CAREER_GUIDES: CareerGuide[] = [
-  {
-    id: 'qa-engineer',
-    title: 'QA Engineer',
-    roleSummary: 'Plan and run software tests, find defects early, and improve release quality with developers.',
-    responsibilities: [
-      'Design test plans, cases, and regression suites.',
-      'Track defects in bug systems and verify fixes.',
-      'Collaborate with engineering teams on release quality gates.',
-      'Support automation for repeatable test coverage.',
-    ],
-    requirements: [
-      'Strong understanding of software testing fundamentals.',
-      'Familiarity with automation and CI/CD workflows.',
-      'Attention to detail and analytical problem solving.',
-      'Clear written communication for defect reporting.',
-    ],
-    sources: [
-      { label: 'O*NET: Software QA Analysts and Testers', url: 'https://www.onetonline.org/link/summary/15-1253.00' },
-      { label: 'BLS: Software Developers, QA Analysts, and Testers', url: 'https://www.bls.gov/ooh/computer-and-information-technology/software-developers.htm' },
-    ],
-    keywords: ['qa', 'quality assurance', 'tester', 'test engineer', 'software testing'],
-  },
-  {
-    id: 'web-designer',
-    title: 'Web Designer',
-    roleSummary: 'Design user-friendly website interfaces and visual layouts that balance usability and brand goals.',
-    responsibilities: [
-      'Create responsive page layouts and design systems.',
-      'Design interface components and interaction flows.',
-      'Collaborate with developers to implement accessible UI.',
-      'Iterate on designs using user feedback and analytics.',
-    ],
-    requirements: [
-      'Portfolio demonstrating interface and visual design.',
-      'Knowledge of accessibility and responsive design patterns.',
-      'Familiarity with prototyping and design tools.',
-      'Strong communication with product and engineering teams.',
-    ],
-    sources: [
-      { label: 'BLS: Web Developers and Digital Designers', url: 'https://www.bls.gov/ooh/computer-and-information-technology/web-developers.htm' },
-      { label: 'O*NET: Web and Digital Interface Designers', url: 'https://www.onetonline.org/link/summary/15-1255.00' },
-    ],
-    keywords: ['web designer', 'ui designer', 'ux', 'interface design', 'digital designer', 'web design'],
-  },
-  {
-    id: 'web-developer',
-    title: 'Web Developer',
-    roleSummary: 'Build and maintain websites and web applications with reliable performance and maintainable code.',
-    responsibilities: [
-      'Implement features using modern web technologies.',
-      'Optimize site performance and browser compatibility.',
-      'Integrate APIs, data stores, and authentication flows.',
-      'Write tests and maintain production-ready code quality.',
-    ],
-    requirements: [
-      'Proficiency in HTML, CSS, JavaScript, and frameworks.',
-      'Understanding of version control and deployment workflows.',
-      'Problem-solving for debugging and performance tuning.',
-      'Ability to work with product, design, and QA teams.',
-    ],
-    sources: [
-      { label: 'O*NET: Web Developers', url: 'https://www.onetonline.org/link/summary/15-1254.00' },
-      { label: 'BLS: Web Developers and Digital Designers', url: 'https://www.bls.gov/ooh/computer-and-information-technology/web-developers.htm' },
-    ],
-    keywords: ['web developer', 'frontend', 'front-end', 'javascript', 'react', 'html', 'css'],
-  },
-  {
-    id: 'graphic-designer',
-    title: 'Graphic Designer',
-    roleSummary: 'Translate ideas into visual assets for digital and print channels that communicate clearly.',
-    responsibilities: [
-      'Create branding, marketing, and campaign visuals.',
-      'Prepare production-ready design assets and layouts.',
-      'Coordinate with stakeholders on visual direction.',
-      'Maintain consistency with brand guidelines.',
-    ],
-    requirements: [
-      'Strong portfolio of visual design projects.',
-      'Proficiency with design software and typography basics.',
-      'Understanding of composition, color, and hierarchy.',
-      'Ability to iterate from feedback and deadlines.',
-    ],
-    sources: [
-      { label: 'BLS: Graphic Designers', url: 'https://www.bls.gov/ooh/arts-and-design/graphic-designers.htm' },
-      { label: 'O*NET: Graphic Designers', url: 'https://www.onetonline.org/link/summary/27-1024.00' },
-    ],
-    keywords: ['graphic design', 'graphic designer', 'branding', 'visual design', 'photoshop', 'illustrator'],
-  },
-  {
-    id: 'data-scientist',
-    title: 'Data Scientist',
-    roleSummary: 'Use data analysis, modeling, and communication to generate insights and support business decisions.',
-    responsibilities: [
-      'Collect, clean, and analyze structured and unstructured data.',
-      'Build and validate statistical or machine-learning models.',
-      'Communicate findings through clear data storytelling.',
-      'Partner with teams to prioritize high-impact analytics work.',
-    ],
-    requirements: [
-      'Strong foundation in statistics and data analysis.',
-      'Programming skills for data workflows and modeling.',
-      'Ability to explain technical results to non-technical teams.',
-      'Experience with data visualization and reporting tools.',
-    ],
-    sources: [
-      { label: 'BLS: Data Scientists', url: 'https://www.bls.gov/ooh/math/data-scientists.htm' },
-      { label: 'O*NET: Data Scientists', url: 'https://www.onetonline.org/link/summary/15-2051.00' },
-    ],
-    keywords: ['data scientist', 'data science', 'analytics', 'machine learning', 'python', 'sql'],
-  },
-];
-
-const selectCareerGuides = (interests: string[], fallbackSkills: string[] = []): CareerGuide[] => {
-  const pool = [...interests, ...fallbackSkills].map((entry) => String(entry || '').toLowerCase());
-  if (!pool.length) return CAREER_GUIDES.slice(0, 3);
-  const scored = CAREER_GUIDES.map((guide) => {
-    let score = 0;
-    for (const keyword of guide.keywords) {
-      if (pool.some((entry) => entry.includes(keyword) || keyword.includes(entry))) score += 1;
-    }
-    if (pool.some((entry) => entry.includes(guide.title.toLowerCase()))) score += 2;
-    return { guide, score };
-  });
-  const ranked = scored
-    .sort((a, b) => b.score - a.score)
-    .map((item) => item.guide);
-  return ranked.slice(0, 4);
+const slugifyCareerGuideId = (value: string, fallback = 'role') => {
+  const base = String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 72);
+  return base || fallback;
 };
 
-const rotateList = <T,>(items: T[], offset: number): T[] => {
-  if (!items.length) return [];
-  const normalized = ((offset % items.length) + items.length) % items.length;
-  return [...items.slice(normalized), ...items.slice(0, normalized)];
+const normalizeCareerGuideListItems = (items: unknown, max = 8, itemMax = 220): string[] => {
+  const rows = Array.isArray(items) ? items : [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const value = String(row || '').replace(/\s+/g, ' ').trim().slice(0, itemMax);
+    if (!value) continue;
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+    if (out.length >= max) break;
+  }
+  return out;
+};
+
+const normalizeCareerGuideSources = (rawSources: unknown, roleTitle: string): CareerGuidanceRole['sources'] => {
+  const rows = Array.isArray(rawSources)
+    ? rawSources
+    : (rawSources && typeof rawSources === 'object'
+      ? Object.values(rawSources as Record<string, unknown>)
+      : []);
+  const out: CareerGuidanceRole['sources'] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    let label = '';
+    let url = '';
+    if (row && typeof row === 'object') {
+      label = String((row as any).label || (row as any).title || (row as any).name || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 120);
+      url = String((row as any).url || (row as any).href || (row as any).link || '').trim();
+    } else if (typeof row === 'string') {
+      url = row.trim();
+    }
+    if (!/^https?:\/\//i.test(url)) continue;
+    if (!label) {
+      try {
+        const parsed = new URL(url);
+        label = parsed.hostname.replace(/^www\./i, '') || 'Source';
+      } catch {
+        label = 'Source';
+      }
+    }
+    const key = `${label.toLowerCase()}|${url.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ label, url });
+    if (out.length >= 4) break;
+  }
+  if (out.length) return out;
+  const roleQuery = encodeURIComponent(String(roleTitle || '').trim() || 'career role');
+  return [
+    { label: 'BLS Occupational Outlook Handbook', url: `https://www.bls.gov/ooh/search.htm?ST=${roleQuery}` },
+    { label: 'O*NET OnLine', url: `https://www.onetonline.org/find/quick?s=${roleQuery}` },
+  ];
+};
+
+const normalizeCareerGuidanceRoles = (input: unknown, max = 8): CareerGuidanceRole[] => {
+  const rows = Array.isArray(input) ? input : [];
+  const out: CareerGuidanceRole[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue;
+    const title = String(
+      (row as any).title
+      || (row as any).jobTitle
+      || (row as any).role
+      || (row as any).name
+      || ''
+    ).replace(/\s+/g, ' ').trim().slice(0, 120);
+    if (!title) continue;
+    const key = title.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const fallbackId = `career-${slugifyCareerGuideId(title, String(out.length + 1))}`;
+    out.push({
+      id: String((row as any).id || fallbackId).slice(0, 96),
+      title,
+      roleSummary: String(
+        (row as any).roleSummary
+        || (row as any).summary
+        || (row as any).reason
+        || 'This role aligns with your profile and interests.'
+      ).replace(/\s+/g, ' ').trim().slice(0, 420),
+      responsibilities: normalizeCareerGuideListItems(
+        (row as any).responsibilities
+        || (row as any).duties
+        || (row as any).tasks
+        || [],
+        8,
+        220
+      ),
+      requirements: normalizeCareerGuideListItems(
+        (row as any).requirements
+        || (row as any).qualifications
+        || (row as any).mustHave
+        || [],
+        8,
+        220
+      ),
+      sources: normalizeCareerGuideSources(
+        (row as any).sources
+        || (row as any).references
+        || (row as any).links
+        || [],
+        title
+      ),
+    });
+    if (out.length >= max) break;
+  }
+  return out;
+};
+
+const mergeCareerGuidanceRoles = (
+  generated: CareerGuidanceRole[],
+  custom: CareerGuidanceRole[],
+  max = 8
+): CareerGuidanceRole[] => {
+  const out: CareerGuidanceRole[] = [];
+  const seen = new Set<string>();
+  for (const guide of [...custom, ...generated]) {
+    if (!guide || typeof guide !== 'object') continue;
+    const title = String(guide.title || '').replace(/\s+/g, ' ').trim();
+    if (!title) continue;
+    const key = title.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(guide);
+    if (out.length >= max) break;
+  }
+  return out;
+};
+
+const isLegacyCustomCareerPlaceholder = (guide: CareerGuidanceRole): boolean => {
+  const summary = String(guide?.roleSummary || '').toLowerCase();
+  const responsibilities = Array.isArray(guide?.responsibilities) ? guide.responsibilities : [];
+  const requirements = Array.isArray(guide?.requirements) ? guide.requirements : [];
+  return (
+    summary.includes('custom role added by you')
+    || responsibilities.some((item) => /^scope the core responsibilities for\b/i.test(String(item || '').trim()))
+    || requirements.some((item) => /^list required skills and tools for this role\b/i.test(String(item || '').trim()))
+  );
+};
+
+const buildCareerGuidanceSignature = (
+  profile: {
+    fullName?: string;
+    headline?: string;
+    summary?: string;
+    skills?: string[];
+    experience?: Array<{ role?: string; organization?: string; highlights?: string[] }>;
+    education?: Array<{ program?: string; institution?: string }>;
+    certifications?: string[];
+    learningGoal?: string;
+    region?: string;
+    preferredLanguage?: string;
+  },
+  interests: string[]
+): string => {
+  const payload = {
+    schemaVersion: 'career-guidance-v2',
+    fullName: String(profile?.fullName || '').trim(),
+    headline: String(profile?.headline || '').trim(),
+    summary: String(profile?.summary || '').trim(),
+    skills: normalizeCareerGuideListItems(profile?.skills || [], 30, 120),
+    experience: (Array.isArray(profile?.experience) ? profile.experience : []).map((row) => ({
+      role: String(row?.role || '').trim(),
+      organization: String(row?.organization || '').trim(),
+      highlights: normalizeCareerGuideListItems(row?.highlights || [], 8, 120),
+    })),
+    education: (Array.isArray(profile?.education) ? profile.education : []).map((row) => ({
+      program: String(row?.program || '').trim(),
+      institution: String(row?.institution || '').trim(),
+    })),
+    certifications: normalizeCareerGuideListItems(profile?.certifications || [], 20, 120),
+    learningGoal: String(profile?.learningGoal || '').trim(),
+    region: String(profile?.region || '').trim(),
+    preferredLanguage: String(profile?.preferredLanguage || '').trim(),
+    interests: normalizeCareerGuideListItems(interests || [], 20, 120),
+  };
+  return JSON.stringify(payload);
 };
 
 const buildVoiceAnswerHints = (value: string) => {
@@ -3064,6 +4066,10 @@ const DEFAULT_IMPACT: ImpactMetrics = {
 };
 
 const PROGRESS_SCHEMA_VERSION = 2;
+const COURSE_PROGRESS_STORAGE_PREFIX = 'nexus_progress_';
+const HALL_OF_FAME_STORAGE_KEY = 'nexus_hall_of_fame_cards';
+const INTERVIEW_HISTORY_STORAGE_PREFIX = 'nexus_interview_history_';
+const INTERVIEW_HISTORY_MAX_ROWS = 24;
 const MODULE_PARALLEL_WORKERS = (() => {
   const raw = Number(import.meta.env.VITE_MODULE_PARALLEL_WORKERS || 4);
   if (!Number.isFinite(raw) || raw <= 0) return 4;
@@ -3092,6 +4098,151 @@ const INTERVIEW_LANGUAGE_OPTIONS = [
   { value: 'km-KH', label: 'Khmer' },
   { value: 'lo-LA', label: 'Lao' },
 ] as const;
+
+type StoredCourseProgress = {
+  progressSchemaVersion?: number;
+  courseId?: string;
+  course?: Course | null;
+  interactionProgress?: Record<string, StepInteractionProgress>;
+  activeModuleId?: string | null;
+  activeLessonByModule?: Record<string, number>;
+  updatedAt?: string;
+};
+
+const getCourseProgressStorageKey = (courseId: string): string => (
+  `${COURSE_PROGRESS_STORAGE_PREFIX}${encodeURIComponent(String(courseId || '').trim())}`
+);
+
+const getResolvedCourseProgressId = (courseId: string, sourceCourse: Course | null): string => {
+  const explicit = String(courseId || '').trim();
+  if (explicit) return explicit;
+  const title = String(sourceCourse?.title || '').trim();
+  return title ? `course:${title}` : '';
+};
+
+const normalizeStoredLessonMap = (value: unknown): Record<string, number> => {
+  const next: Record<string, number> = {};
+  if (!value || typeof value !== 'object') return next;
+  for (const [moduleId, rawLesson] of Object.entries(value as Record<string, unknown>)) {
+    const lesson = Number(rawLesson);
+    if (!moduleId || !Number.isFinite(lesson) || lesson <= 0) continue;
+    next[moduleId] = Math.floor(lesson);
+  }
+  return next;
+};
+
+const loadStoredCourseProgress = (courseId: string): StoredCourseProgress | null => {
+  const key = getCourseProgressStorageKey(courseId);
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed as StoredCourseProgress;
+  } catch {
+    return null;
+  }
+};
+
+const isStoredStepComplete = (
+  moduleId: string,
+  step: Module['steps'][number],
+  progressMap: Record<string, StepInteractionProgress>,
+  legacyAutoComplete: boolean
+): boolean => {
+  if (step.status !== 'completed') return false;
+  const track = progressMap[`${moduleId}:${step.id}`] || {};
+  const content: any = step.content || {};
+  const cardTotal = Array.isArray(content?.data?.cards) ? content.data.cards.length : 0;
+  const dragTotal = Array.isArray(content?.data?.challenges) ? content.data.challenges.length : 0;
+  const resolvedType = normalizeContentType(content?.type || step.type);
+
+  if (step.type === ContentType.VIDEO) {
+    return !!track.videoCompleted;
+  }
+  if (step.type === ContentType.FLIP_CARD) {
+    const total = track.flashcardsTotal || cardTotal || 1;
+    return (track.flashcardsViewed || 0) >= total;
+  }
+  if (step.type === ContentType.QUIZ) {
+    return !!track.quizPassed;
+  }
+  if (step.type === ContentType.DRAG_FILL) {
+    const total = track.dragFillTotal || dragTotal || 1;
+    return (track.dragFillCompleted || 0) >= total;
+  }
+  if (step.type === ContentType.CODE_BUILDER) {
+    return !!track.codeBuilderCompleted;
+  }
+  if (isReadTrackedType(resolvedType)) {
+    if (legacyAutoComplete) return true;
+    return !!track.readCompleted;
+  }
+  return legacyAutoComplete;
+};
+
+const computeStoredCourseCompletionPercent = (stored: StoredCourseProgress | null): number | null => {
+  const safeCourse = sanitizeCourse(stored?.course || null);
+  if (!safeCourse) return null;
+  const progressMap = stored?.interactionProgress && typeof stored.interactionProgress === 'object'
+    ? stored.interactionProgress
+    : {};
+  const legacyAutoComplete = Number(stored?.progressSchemaVersion || 1) < PROGRESS_SCHEMA_VERSION;
+  let total = 0;
+  let completed = 0;
+  for (const module of safeCourse.modules) {
+    for (const step of module.steps) {
+      total += 1;
+      if (isStoredStepComplete(module.id, step, progressMap, legacyAutoComplete)) {
+        completed += 1;
+      }
+    }
+  }
+  return total ? Math.round((completed / total) * 100) : 0;
+};
+
+const listStoredCourseProgressRows = (): Array<{
+  courseId: string;
+  stored: StoredCourseProgress;
+  course: Course;
+  completionPct: number;
+  updatedAt: string;
+}> => {
+  if (typeof window === 'undefined') return [];
+  const rows: Array<{
+    courseId: string;
+    stored: StoredCourseProgress;
+    course: Course;
+    completionPct: number;
+    updatedAt: string;
+  }> = [];
+  const seen = new Set<string>();
+  try {
+    for (let idx = 0; idx < localStorage.length; idx += 1) {
+      const key = localStorage.key(idx);
+      if (!key || !key.startsWith(COURSE_PROGRESS_STORAGE_PREFIX)) continue;
+      const encodedId = key.slice(COURSE_PROGRESS_STORAGE_PREFIX.length);
+      const decodedId = decodeURIComponent(encodedId || '').trim();
+      const stored = loadStoredCourseProgress(decodedId);
+      const safeCourse = sanitizeCourse(stored?.course || null);
+      if (!safeCourse) continue;
+      const courseId = String(stored?.courseId || decodedId || getResolvedCourseProgressId('', safeCourse)).trim();
+      if (!courseId || seen.has(courseId)) continue;
+      const completionPct = Number(computeStoredCourseCompletionPercent(stored) || 0);
+      seen.add(courseId);
+      rows.push({
+        courseId,
+        stored: stored || {},
+        course: safeCourse,
+        completionPct: Number.isFinite(completionPct) ? completionPct : 0,
+        updatedAt: String(stored?.updatedAt || ''),
+      });
+    }
+  } catch {
+    return [];
+  }
+  return rows.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+};
 
 const localeToInterviewLanguage = (value: SupportedLocale | string): string => {
   const locale = normalizeSupportedLocale(value);
@@ -3130,6 +4281,162 @@ const normalizeInterviewLanguageSelection = (value: string): string => {
   const direct = INTERVIEW_LANGUAGE_OPTIONS.find((opt) => opt.value.toLowerCase() === raw.toLowerCase());
   if (direct) return direct.value;
   return localeToInterviewLanguage(interviewLanguageToShortCode(raw));
+};
+
+const getInterviewHistoryStorageKey = (accountId: string): string => (
+  `${INTERVIEW_HISTORY_STORAGE_PREFIX}${encodeURIComponent(String(accountId || '').trim())}`
+);
+
+const sanitizeStringArray = (value: unknown): string[] => (
+  Array.isArray(value)
+    ? value
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+      .slice(0, 24)
+    : []
+);
+
+const normalizeStoredInterviewFocus = (value: unknown): InterviewQuestionFocus => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'behavioral') return 'behavioral';
+  if (raw === 'technical') return 'technical';
+  return 'mixed';
+};
+
+const normalizeStoredInterviewSeniority = (value: unknown): InterviewSeniority => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'entry') return 'entry';
+  if (raw === 'senior') return 'senior';
+  return 'mid';
+};
+
+const sanitizeStoredInterviewSession = (value: unknown, fallbackJobTitle = ''): InterviewSession | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Record<string, any>;
+  const sourceRole = source.role && typeof source.role === 'object' ? source.role : {};
+  const roleJobTitle = String(sourceRole.jobTitle || fallbackJobTitle || '').trim();
+  if (!roleJobTitle) return null;
+  const rawQuestions = Array.isArray(source.questions) ? source.questions : [];
+  const questions = rawQuestions
+    .map((question, idx) => {
+      const row = question && typeof question === 'object' ? question : {};
+      const questionText = String(row.question || '').trim();
+      if (!questionText) return null;
+      const questionId = String(row.id || `history-q-${idx + 1}`).trim() || `history-q-${idx + 1}`;
+      return {
+        id: questionId,
+        question: questionText,
+        focus: String(row.focus || 'Interview communication').trim() || 'Interview communication',
+      };
+    })
+    .filter((row): row is InterviewSession['questions'][number] => !!row);
+  if (!questions.length) return null;
+  return {
+    role: {
+      jobTitle: roleJobTitle,
+      roleSummary: String(sourceRole.roleSummary || '').trim(),
+      responsibilities: sanitizeStringArray(sourceRole.responsibilities),
+      requirements: sanitizeStringArray(sourceRole.requirements),
+    },
+    questions,
+    generatedAt: String(source.generatedAt || '').trim() || new Date().toISOString(),
+  };
+};
+
+const sanitizeStoredInterviewAnswers = (value: unknown): Record<string, string> => {
+  const next: Record<string, string> = {};
+  if (!value || typeof value !== 'object') return next;
+  for (const [questionId, answerValue] of Object.entries(value as Record<string, unknown>)) {
+    const answer = String(answerValue || '').trim();
+    if (!questionId || !answer) continue;
+    next[questionId] = answer;
+  }
+  return next;
+};
+
+const sanitizeStoredInterviewFeedback = (value: unknown): Record<string, InterviewAnswerFeedback> => {
+  const next: Record<string, InterviewAnswerFeedback> = {};
+  if (!value || typeof value !== 'object') return next;
+  for (const [questionId, feedbackValue] of Object.entries(value as Record<string, unknown>)) {
+    if (!questionId || !feedbackValue || typeof feedbackValue !== 'object') continue;
+    const row = feedbackValue as Record<string, any>;
+    const scoreValue = Number(row.score);
+    next[questionId] = {
+      questionId: String(row.questionId || questionId).trim() || questionId,
+      feedback: String(row.feedback || '').trim(),
+      sampleResponse: String(row.sampleResponse || '').trim(),
+      toneFeedback: String(row.toneFeedback || '').trim(),
+      grammarFeedback: String(row.grammarFeedback || '').trim(),
+      pronunciationFeedback: String(row.pronunciationFeedback || '').trim(),
+      riskFlags: sanitizeStringArray(row.riskFlags),
+      score: Number.isFinite(scoreValue) ? scoreValue : 0,
+    };
+  }
+  return next;
+};
+
+const sanitizeStoredInterviewFinalReview = (value: unknown): InterviewFinalReview | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Record<string, any>;
+  const summary = String(source.summary || '').trim();
+  const strengths = sanitizeStringArray(source.strengths);
+  const improvements = sanitizeStringArray(source.improvements);
+  const hiringRiskNotes = sanitizeStringArray(source.hiringRiskNotes);
+  const nextSteps = sanitizeStringArray(source.nextSteps);
+  if (!summary && !strengths.length && !improvements.length && !hiringRiskNotes.length && !nextSteps.length) {
+    return null;
+  }
+  return {
+    summary,
+    strengths,
+    improvements,
+    hiringRiskNotes,
+    nextSteps,
+  };
+};
+
+const loadStoredInterviewHistory = (accountId: string): InterviewHistoryEntry[] => {
+  const key = getInterviewHistoryStorageKey(accountId);
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const rows = parsed
+      .map((item: any, idx: number) => {
+        if (!item || typeof item !== 'object') return null;
+        const session = sanitizeStoredInterviewSession(item.session, item.jobTitle);
+        if (!session) return null;
+        const jobTitle = String(item.jobTitle || session.role.jobTitle || '').trim();
+        if (!jobTitle) return null;
+        const createdAt = String(item.createdAt || session.generatedAt || '').trim() || new Date().toISOString();
+        const answersByQuestionId = sanitizeStoredInterviewAnswers(item.answersByQuestionId);
+        const feedbackByQuestionId = sanitizeStoredInterviewFeedback(item.feedbackByQuestionId);
+        const answeredCountRaw = Number(item.answeredCount);
+        const answeredCount = Number.isFinite(answeredCountRaw)
+          ? Math.max(0, Math.min(session.questions.length, Math.floor(answeredCountRaw)))
+          : Math.min(session.questions.length, Object.keys(answersByQuestionId).length);
+        const id = String(item.id || '').trim() || `${createdAt}:${jobTitle}:${idx}`;
+        return {
+          id,
+          accountId: String(item.accountId || accountId || '').trim() || accountId,
+          createdAt,
+          jobTitle,
+          questionFocus: normalizeStoredInterviewFocus(item.questionFocus),
+          seniority: normalizeStoredInterviewSeniority(item.seniority),
+          targetLanguage: normalizeInterviewLanguageSelection(String(item.targetLanguage || 'en-US')),
+          session,
+          finalReview: sanitizeStoredInterviewFinalReview(item.finalReview),
+          answersByQuestionId,
+          feedbackByQuestionId,
+          answeredCount,
+        } as InterviewHistoryEntry;
+      })
+      .filter((row): row is InterviewHistoryEntry => !!row);
+    return rows.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  } catch {
+    return [];
+  }
 };
 
 const getInterviewSpeechRecognitionCtor = (): any => {
@@ -3201,14 +4508,20 @@ export default function App() {
   const [isComposerMenuOpen, setIsComposerMenuOpen] = useState(false);
   const [composerMode, setComposerMode] = useState<ComposerMode>('default');
   const [careerPromptSeed, setCareerPromptSeed] = useState(0);
+  const [careerGuidanceRoles, setCareerGuidanceRoles] = useState<CareerGuidanceRole[]>([]);
+  const [customCareerGuides, setCustomCareerGuides] = useState<CareerGuidanceRole[]>([]);
+  const [careerGuidanceBusy, setCareerGuidanceBusy] = useState(false);
+  const [careerCustomRoleBusy, setCareerCustomRoleBusy] = useState(false);
+  const [careerGuidanceNotice, setCareerGuidanceNotice] = useState<string | null>(null);
+  const [careerCustomRoleInput, setCareerCustomRoleInput] = useState('');
   const [promptError, setPromptError] = useState<string | null>(null);
   const [shakePrompt, setShakePrompt] = useState(false);
   const [interviewRecommendedJobs, setInterviewRecommendedJobs] = useState<InterviewRecommendedJob[]>([]);
   const [interviewJobsBusy, setInterviewJobsBusy] = useState(false);
   const [selectedInterviewJobTitle, setSelectedInterviewJobTitle] = useState('');
   const [interviewTargetLanguage, setInterviewTargetLanguage] = useState<string>(() => localeToInterviewLanguage(getLocale()));
-  const [interviewQuestionFocus, setInterviewQuestionFocus] = useState<'mixed' | 'behavioral' | 'technical'>('mixed');
-  const [interviewSeniority, setInterviewSeniority] = useState<'entry' | 'mid' | 'senior'>('mid');
+  const [interviewQuestionFocus, setInterviewQuestionFocus] = useState<InterviewQuestionFocus>('mixed');
+  const [interviewSeniority, setInterviewSeniority] = useState<InterviewSeniority>('mid');
   const [interviewSession, setInterviewSession] = useState<InterviewSession | null>(null);
   const [interviewActiveQuestionIdx, setInterviewActiveQuestionIdx] = useState(0);
   const [interviewAnswersByQuestionId, setInterviewAnswersByQuestionId] = useState<Record<string, string>>({});
@@ -3226,6 +4539,7 @@ export default function App() {
   const [interviewRecordedSecondsByQuestionId, setInterviewRecordedSecondsByQuestionId] = useState<Record<string, number>>({});
   const [interviewTranscribingQuestionId, setInterviewTranscribingQuestionId] = useState<string | null>(null);
   const [interviewVoiceWaveBars, setInterviewVoiceWaveBars] = useState<number[]>(() => Array.from({ length: 24 }, () => 0.08));
+  const [interviewHistoryRows, setInterviewHistoryRows] = useState<InterviewHistoryEntry[]>([]);
   const speechRecognitionRef = useRef<any>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const recordingElapsedRef = useRef(0);
@@ -3278,6 +4592,10 @@ export default function App() {
       const raw = localStorage.getItem('nexus_router_config');
       if (raw) {
         const cfg = JSON.parse(raw);
+        const mode = String(cfg?.mode || '').trim().toLowerCase();
+        if (mode === 'auto_fast' || mode === 'autofast' || mode === 'fast' || mode === 'auto_thinking' || mode === 'autothinking' || mode === 'thinking' || mode === 'auto') {
+          return 'auto';
+        }
         return cfg.provider || 'auto';
       }
     } catch {}
@@ -3285,20 +4603,29 @@ export default function App() {
   });
   const [routerModel, setRouterModel] = useState<string>(() => {
     const sanitizeModel = (value: string) => {
-      const model = String(value || 'auto').trim() || 'auto';
-      return model === 'gemini-3-flash-preview' ? 'auto' : model;
+      const model = String(value || '').trim();
+      if (!model || model === 'auto') return AUTO_FAST_MODEL;
+      if (model === AUTO_FAST_MODEL || model === AUTO_THINKING_MODEL) return model;
+      return model === 'gemini-3-flash-preview' ? AUTO_THINKING_MODEL : model;
     };
     try {
       const raw = localStorage.getItem('nexus_router_config');
       if (raw) {
         const cfg = JSON.parse(raw);
-        return sanitizeModel(cfg.model || 'auto');
+        const mode = String(cfg?.mode || '').trim().toLowerCase();
+        if (mode === 'auto_fast' || mode === 'autofast' || mode === 'fast') return AUTO_FAST_MODEL;
+        if (mode === 'auto_thinking' || mode === 'autothinking' || mode === 'thinking' || mode === 'auto') return AUTO_THINKING_MODEL;
+        const stored = sanitizeModel(cfg.model || 'auto');
+        if (stored === AUTO_FAST_MODEL || stored === AUTO_THINKING_MODEL) return stored;
+        return stored;
       }
       const mode = localStorage.getItem('nexus_model_mode');
       const manual = localStorage.getItem('nexus_model_manual');
-      return mode === 'manual' && manual ? sanitizeModel(manual) : 'auto';
+      if (mode === 'manual' && manual) return sanitizeModel(manual);
+      if (mode === 'auto') return AUTO_THINKING_MODEL;
+      return AUTO_FAST_MODEL;
     } catch {
-      return 'auto';
+      return AUTO_FAST_MODEL;
     }
   });
   const [isOnline, setIsOnline] = useState<boolean>(() => {
@@ -3363,7 +4690,30 @@ export default function App() {
   const [activeAnalyticsCourseId, setActiveAnalyticsCourseId] = useState('');
   const [courseAnalyticsBusy, setCourseAnalyticsBusy] = useState(false);
   const [courseAnalyticsError, setCourseAnalyticsError] = useState<string | null>(null);
+  const [analyticsCommentsModalOpen, setAnalyticsCommentsModalOpen] = useState(false);
+  const [analyticsCommentsBusy, setAnalyticsCommentsBusy] = useState(false);
+  const [analyticsCommentsError, setAnalyticsCommentsError] = useState<string | null>(null);
+  const [analyticsCommentsRows, setAnalyticsCommentsRows] = useState<Array<{ id: string; accountId: string; text: string; createdAt: string }>>([]);
   const [learningCourses, setLearningCourses] = useState<LearningCourseSummary[]>([]);
+  const [hallOfFameCards, setHallOfFameCards] = useState<HallOfFameCard[]>(() => {
+    try {
+      const raw = localStorage.getItem(HALL_OF_FAME_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .map((row) => ({
+          id: String(row?.id || ''),
+          courseId: String(row?.courseId || ''),
+          courseTitle: String(row?.courseTitle || ''),
+          earnedAt: String(row?.earnedAt || ''),
+          moduleCount: Math.max(0, Number(row?.moduleCount || 0)),
+        }))
+        .filter((row) => row.id && row.courseTitle);
+    } catch {
+      return [];
+    }
+  });
   const [cohortName, setCohortName] = useState('');
   const [activeCohortId, setActiveCohortId] = useState<string | null>(null);
   const [onboardingStep, setOnboardingStep] = useState(0);
@@ -3423,6 +4773,104 @@ export default function App() {
 
   const showMascotToast = (title: string, subtitle: string, mood: MascotToastState['mood'] = 'happy') => {
     setMascotToast({ id: Date.now(), title, subtitle, mood });
+  };
+
+  const awardHallOfFameCollectible = (resolvedCourseId: string, sourceCourse: Course | null) => {
+    const safeCourse = sanitizeCourse(sourceCourse);
+    if (!safeCourse) return;
+    const courseId = String(resolvedCourseId || getResolvedCourseProgressId('', safeCourse)).trim();
+    const title = String(safeCourse.title || courseId || 'Completed Course').trim();
+    if (!title) return;
+    const cardId = `${courseId || title}`.toLowerCase();
+    setHallOfFameCards((prev) => {
+      if (prev.some((row) => row.id === cardId)) return prev;
+      return [
+        {
+          id: cardId,
+          courseId: courseId || title,
+          courseTitle: title,
+          earnedAt: new Date().toISOString(),
+          moduleCount: Array.isArray(safeCourse.modules) ? safeCourse.modules.length : 0,
+        },
+        ...prev,
+      ].slice(0, 24);
+    });
+  };
+
+  const openCourseForLearning = (
+    sourceCourse: Course,
+    options: {
+      courseId?: string;
+      ownerId?: string;
+      syncBrowserPath?: boolean;
+    } = {}
+  ): boolean => {
+    const sanitizedSource = sanitizeCourse(sourceCourse);
+    if (!sanitizedSource) return false;
+
+    const resolvedCourseId = getResolvedCourseProgressId(options.courseId || '', sanitizedSource);
+    const currentlyOpenCourseId = getResolvedCourseProgressId(activeCourseId, course);
+    const isSameCourseInSession = !!course && (
+      (resolvedCourseId && currentlyOpenCourseId === resolvedCourseId)
+      || (
+        String(course?.title || '').trim().toLowerCase()
+        && String(course?.title || '').trim().toLowerCase() === String(sanitizedSource.title || '').trim().toLowerCase()
+      )
+    );
+    const legacyCourseId = getResolvedCourseProgressId('', sanitizedSource);
+    let stored = resolvedCourseId ? loadStoredCourseProgress(resolvedCourseId) : null;
+    if (!stored && legacyCourseId && legacyCourseId !== resolvedCourseId) {
+      stored = loadStoredCourseProgress(legacyCourseId);
+      if (stored && resolvedCourseId) {
+        try {
+          localStorage.setItem(
+            getCourseProgressStorageKey(resolvedCourseId),
+            JSON.stringify({
+              ...stored,
+              courseId: resolvedCourseId,
+              course: sanitizeCourse(stored.course || sanitizedSource),
+              updatedAt: new Date().toISOString(),
+            } as StoredCourseProgress)
+          );
+        } catch {
+          // ignore migration write failures
+        }
+      }
+    }
+    const storedCourse = sanitizeCourse(stored?.course || null);
+    const nextCourse = storedCourse || sanitizedSource;
+    const nextInteractionProgress = stored?.interactionProgress && typeof stored.interactionProgress === 'object'
+      ? stored.interactionProgress
+      : (isSameCourseInSession ? interactionProgress : {});
+    const storedLessonByModule = normalizeStoredLessonMap(stored?.activeLessonByModule);
+    const nextActiveLessonByModule = Object.keys(storedLessonByModule).length
+      ? storedLessonByModule
+      : (isSameCourseInSession ? activeLessonByModule : {});
+    const storedActiveModuleId = String(stored?.activeModuleId || '').trim();
+    const sessionActiveModuleId = String(activeModuleId || '').trim();
+    const nextActiveModuleId = storedActiveModuleId && nextCourse.modules.some((module) => module.id === storedActiveModuleId)
+      ? storedActiveModuleId
+      : (isSameCourseInSession && sessionActiveModuleId && nextCourse.modules.some((module) => module.id === sessionActiveModuleId)
+        ? sessionActiveModuleId
+        : (nextCourse.modules[0]?.id || null));
+
+    setCourse(nextCourse);
+    setInteractionProgress(nextInteractionProgress);
+    setActiveLessonByModule(nextActiveLessonByModule);
+    setActiveCourseId(resolvedCourseId);
+    setActiveCourseOwnerId(String(options.ownerId || '').trim());
+    if (options.syncBrowserPath) {
+      const canRouteByCourseId = resolvedCourseId
+        && !resolvedCourseId.startsWith('course:')
+        && !resolvedCourseId.startsWith('public-post:');
+      setBrowserPath(canRouteByCourseId ? resolvedCourseId : '');
+    }
+    setState('learning');
+    setActiveModuleId(nextActiveModuleId);
+    setExpandedModuleId(nextActiveModuleId);
+    setGlobalError(null);
+    setRetryInfo(null);
+    return true;
   };
 
   const buildPublicIdentity = (id: string, profile: PublicCreatorProfile | null): PublicIdentity => {
@@ -3552,6 +5000,30 @@ export default function App() {
       : '';
   };
 
+  const formatGenerationErrorMessage = (error: unknown, stepType?: ContentType): string => {
+    const raw = String((error as any)?.message || '').trim();
+    if (!raw) {
+      return stepType === ContentType.VIDEO
+        ? 'Could not find an embeddable video for this lesson topic.'
+        : 'This section could not be generated right now.';
+    }
+    const lower = raw.toLowerCase();
+    if (lower.includes('video embedding failed') || lower.includes('no embeddable public youtube video') || lower.includes('no strongly relevant embeddable video')) {
+      return 'Could not find an embeddable video for this lesson topic.';
+    }
+    if (lower.includes('rate') || lower.includes('quota') || lower.includes('capacity')) {
+      return 'Generation is temporarily busy. Please try this section again shortly.';
+    }
+    if (lower.includes('timeout') || lower.includes('timed out') || lower.includes('aborted')) {
+      return 'Generation timed out. Please retry this section.';
+    }
+    return raw
+      .replace(/\bretry or switch (?:model\/provider|provider\/model)\.?\b/ig, '')
+      .replace(/\bai\b/ig, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim() || 'This section could not be generated right now.';
+  };
+
   const generateStepWithFallbackRetry = async (
     courseTitle: string,
     moduleTitle: string,
@@ -3569,7 +5041,7 @@ export default function App() {
       onRetry
     );
     if (isFallbackModuleContent(generated)) {
-      throw new Error('AI provider returned fallback content. Local fallback is disabled.');
+      throw new Error('Content generation returned fallback output, so this section needs a retry.');
     }
     return generated;
   };
@@ -3599,6 +5071,9 @@ export default function App() {
         prompt: pr,
         interactionProgress: ip,
         progressSchemaVersion: sv,
+        activeCourseId: aci,
+        activeCourseOwnerId: aco,
+        activeLessonByModule: albm,
       } = parsed;
       legacyProgressRef.current = Number(sv || 1) < PROGRESS_SCHEMA_VERSION;
 
@@ -3616,6 +5091,9 @@ export default function App() {
       if (cai !== undefined) setCurrentAssessmentIdx(cai);
       if (pr) setPrompt(pr);
       if (ip && typeof ip === 'object') setInteractionProgress(ip);
+      if (aci) setActiveCourseId(String(aci));
+      if (aco) setActiveCourseOwnerId(String(aco));
+      if (albm && typeof albm === 'object') setActiveLessonByModule(normalizeStoredLessonMap(albm));
     } catch {
       try { localStorage.removeItem('nexus_progress'); } catch {}
     }
@@ -3634,8 +5112,55 @@ export default function App() {
       currentAssessmentIdx,
       prompt,
       interactionProgress,
+      activeCourseId,
+      activeCourseOwnerId,
+      activeLessonByModule,
     }));
-  }, [points, streak, course, state, activeModuleId, assessment, answers, currentAssessmentIdx, prompt, interactionProgress]);
+  }, [
+    points,
+    streak,
+    course,
+    state,
+    activeModuleId,
+    assessment,
+    answers,
+    currentAssessmentIdx,
+    prompt,
+    interactionProgress,
+    activeCourseId,
+    activeCourseOwnerId,
+    activeLessonByModule,
+  ]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(HALL_OF_FAME_STORAGE_KEY, JSON.stringify(hallOfFameCards));
+    } catch {
+      // ignore storage errors
+    }
+  }, [hallOfFameCards]);
+
+  useEffect(() => {
+    if (!course) return;
+    const courseId = getResolvedCourseProgressId(activeCourseId, course);
+    if (!courseId) return;
+    try {
+      localStorage.setItem(
+        getCourseProgressStorageKey(courseId),
+        JSON.stringify({
+          progressSchemaVersion: PROGRESS_SCHEMA_VERSION,
+          courseId,
+          course,
+          interactionProgress,
+          activeModuleId,
+          activeLessonByModule,
+          updatedAt: new Date().toISOString(),
+        } as StoredCourseProgress)
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [course, activeCourseId, interactionProgress, activeModuleId, activeLessonByModule]);
 
   useEffect(() => {
     try {
@@ -3653,20 +5178,38 @@ export default function App() {
         localStorage.setItem('nexus_model_candidates', candidates.join(','));
       }
 
-      const mode = (routerProvider !== 'auto' || routerModel !== 'auto') ? 'manual' : 'auto';
+      const normalizedModel = String(routerModel || '').trim();
+      const selectedAutoModel = normalizedModel === AUTO_THINKING_MODEL
+        ? AUTO_THINKING_MODEL
+        : AUTO_FAST_MODEL;
+      const autoSelection = routerProvider === 'auto' && (
+        !normalizedModel
+        || normalizedModel === 'auto'
+        || normalizedModel === AUTO_FAST_MODEL
+        || normalizedModel === AUTO_THINKING_MODEL
+      );
+      const mode = autoSelection
+        ? (selectedAutoModel === AUTO_THINKING_MODEL ? 'auto_thinking' : 'auto_fast')
+        : 'manual';
+      const storedProvider = mode === 'manual' ? routerProvider : 'auto';
+      const storedModel = mode === 'manual'
+        ? (normalizedModel || 'auto')
+        : selectedAutoModel;
       localStorage.setItem('nexus_router_config', JSON.stringify({
         mode,
-        provider: routerProvider,
-        model: routerModel,
+        provider: storedProvider,
+        model: storedModel,
         modelCandidates: candidates,
       }));
+      localStorage.setItem('nexus_router_provider', storedProvider);
 
       // Backward-compatibility for older builds
-      if (routerModel && routerModel !== 'auto') {
+      if (mode === 'manual' && storedModel !== 'auto') {
         localStorage.setItem('nexus_model_mode', 'manual');
-        localStorage.setItem('nexus_model_manual', routerModel);
+        localStorage.setItem('nexus_model_manual', storedModel);
       } else {
         localStorage.setItem('nexus_model_mode', 'auto');
+        localStorage.removeItem('nexus_model_manual');
       }
     } catch {
       // ignore
@@ -3724,24 +5267,19 @@ export default function App() {
           setGlobalError('Course link is unavailable or access is restricted.');
           return;
         }
-        const restored = sanitizeCourse(post.snapshot);
-        if (!restored) {
+        const opened = openCourseForLearning(post.snapshot, {
+          courseId: post.courseId || sharedCourseId,
+          ownerId: String(post.ownerId || '').trim(),
+          syncBrowserPath: !!post.courseId,
+        });
+        if (!opened) {
           setGlobalError('Shared course content is unavailable.');
           return;
         }
-        setCourse(restored);
-        setActiveCourseId(post.courseId || sharedCourseId);
-        setActiveCourseOwnerId(String(post.ownerId || '').trim());
-        setState('learning');
         setActiveHomeTab('learn');
-        setActiveModuleId(restored.modules[0]?.id || null);
-        setExpandedModuleId(restored.modules[0]?.id || null);
-        setGlobalError(null);
-        setRetryInfo(null);
         setPrompt('');
         setPromptError(null);
         setActiveCommunityPost(null);
-        if (post.courseId) setBrowserPath(post.courseId);
         resolvedSharedCourseIdRef.current = sharedCourseId;
       } catch {
         if (!cancelled) {
@@ -4019,6 +5557,52 @@ export default function App() {
   }, [accountId, careerInterestsInput]);
 
   useEffect(() => {
+    if (!accountId) return;
+    try {
+      const raw = localStorage.getItem(`nexus_custom_career_roles_${accountId}`);
+      if (!raw) {
+        setCustomCareerGuides([]);
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      const normalized = normalizeCareerGuidanceRoles(parsed, 8)
+        .filter((guide) => !isLegacyCustomCareerPlaceholder(guide));
+      setCustomCareerGuides(normalized);
+    } catch {
+      setCustomCareerGuides([]);
+    }
+  }, [accountId]);
+
+  useEffect(() => {
+    if (!accountId) return;
+    try {
+      localStorage.setItem(`nexus_custom_career_roles_${accountId}`, JSON.stringify(customCareerGuides));
+    } catch {
+      // ignore
+    }
+  }, [accountId, customCareerGuides]);
+
+  useEffect(() => {
+    if (!accountId) {
+      setInterviewHistoryRows([]);
+      return;
+    }
+    setInterviewHistoryRows(loadStoredInterviewHistory(accountId));
+  }, [accountId]);
+
+  useEffect(() => {
+    if (!accountId) return;
+    try {
+      localStorage.setItem(
+        getInterviewHistoryStorageKey(accountId),
+        JSON.stringify(interviewHistoryRows.slice(0, INTERVIEW_HISTORY_MAX_ROWS))
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [accountId, interviewHistoryRows]);
+
+  useEffect(() => {
     if (onboardingOpen) {
       setOnboardingStep(0);
     }
@@ -4048,12 +5632,23 @@ export default function App() {
   const handleCvFileSelected = async (files: FileList | null) => {
     const file = files?.[0];
     if (!file) return;
+    const normalizedName = String(file.name || '').toLowerCase();
+    const normalizedMime = String(file.type || '').toLowerCase();
     setCvResubmitDirty(true);
     setCvAnalysisError(null);
     setCvResubmitStatus('processing');
     setCvResubmitMessage('Reading and validating your CV...');
     setProfileNotice(null);
     setCvUploadMeta({ name: file.name, size: file.size, type: file.type || 'application/octet-stream' });
+
+    if (normalizedMime === 'application/pdf' || normalizedName.endsWith('.pdf')) {
+      setCvAnalysis(null);
+      const formatError = 'PDF format is no longer supported. Please upload DOC, DOCX, TXT, MD, or RTF.';
+      setCvAnalysisError(formatError);
+      setCvResubmitStatus('invalid');
+      setCvResubmitMessage(formatError);
+      return;
+    }
 
     if (file.size > CV_MAX_SIZE_BYTES) {
       setCvAnalysis(null);
@@ -4386,7 +5981,13 @@ export default function App() {
       const keysToClear: string[] = [];
       for (let idx = 0; idx < localStorage.length; idx += 1) {
         const key = localStorage.key(idx) || '';
-        if (key.startsWith('nexus_career_interests_') || key.startsWith('nexus_progress_')) {
+        if (
+          key.startsWith('nexus_career_interests_')
+          || key.startsWith('nexus_career_guidance_cache_')
+          || key.startsWith('nexus_custom_career_roles_')
+          || key.startsWith('nexus_progress_')
+          || key.startsWith(INTERVIEW_HISTORY_STORAGE_PREFIX)
+        ) {
           keysToClear.push(key);
         }
       }
@@ -4410,6 +6011,12 @@ export default function App() {
     setCvResubmitMessage('');
     setCvResubmitDirty(false);
     setCareerInterestsInput('');
+    setCareerGuidanceRoles([]);
+    setCustomCareerGuides([]);
+    setCareerGuidanceBusy(false);
+    setCareerCustomRoleBusy(false);
+    setCareerGuidanceNotice(null);
+    setCareerCustomRoleInput('');
     setMyCourses([]);
     setPublicFeed([]);
     setLearningCourses([]);
@@ -4428,6 +6035,7 @@ export default function App() {
     setCreatorFollowBusy(false);
     setInterviewRecommendedJobs([]);
     setInterviewJobsBusy(false);
+    setInterviewHistoryRows([]);
     setSelectedInterviewJobTitle('');
     setInterviewTargetLanguage(localeToInterviewLanguage(getLocale()));
     setInterviewQuestionFocus('mixed');
@@ -4486,17 +6094,17 @@ export default function App() {
         setDownloadError('Downloaded snapshot not found. Please re-download this course.');
         return;
       }
-      setCourse(sanitizeCourse(restored));
-      const openedCourseId = row.courseId && !String(row.courseId).startsWith('course:') ? row.courseId : '';
+      const openedCourseId = String(row.courseId || '').trim();
       const ownedPost = myCourses.find((post) => post.courseId === openedCourseId);
-      setActiveCourseId(openedCourseId);
-      setActiveCourseOwnerId(String(ownedPost?.ownerId || '').trim());
-      setBrowserPath(openedCourseId);
-      setState('learning');
-      setActiveModuleId(restored.modules[0]?.id || null);
-      setExpandedModuleId(restored.modules[0]?.id || null);
-      setGlobalError(null);
-      setRetryInfo(null);
+      const opened = openCourseForLearning(restored, {
+        courseId: openedCourseId,
+        ownerId: String(ownedPost?.ownerId || '').trim(),
+        syncBrowserPath: true,
+      });
+      if (!opened) {
+        setDownloadError('Failed to open downloaded course snapshot.');
+        return;
+      }
       showMascotToast('Opened downloaded course', 'You can continue learning offline from your account.', 'happy');
     } catch (e: any) {
       setDownloadError(String(e?.message || 'Failed to open downloaded course.'));
@@ -4584,6 +6192,35 @@ export default function App() {
     try {
       const result = await aiService.setCourseVisibility(post, nextVisibility);
       if (result.courseId && post.title === course?.title) {
+        const targetCourseId = String(result.courseId).trim();
+        const legacyIds = Array.from(new Set([
+          String(activeCourseId || '').trim(),
+          getResolvedCourseProgressId('', course || null),
+          String(post.courseId || '').trim(),
+        ].filter(Boolean)));
+        if (targetCourseId) {
+          const existingTarget = loadStoredCourseProgress(targetCourseId);
+          if (!existingTarget) {
+            for (const legacyId of legacyIds) {
+              if (!legacyId || legacyId === targetCourseId) continue;
+              const legacyStored = loadStoredCourseProgress(legacyId);
+              if (!legacyStored) continue;
+              try {
+                localStorage.setItem(
+                  getCourseProgressStorageKey(targetCourseId),
+                  JSON.stringify({
+                    ...legacyStored,
+                    courseId: targetCourseId,
+                    updatedAt: new Date().toISOString(),
+                  } as StoredCourseProgress)
+                );
+              } catch {
+                // ignore migration write failures
+              }
+              break;
+            }
+          }
+        }
         setActiveCourseId(result.courseId);
         setActiveCourseOwnerId(accountId);
         if (state === 'learning') setBrowserPath(result.courseId);
@@ -4839,7 +6476,37 @@ export default function App() {
       return;
     }
     setActiveAnalyticsCourseId(courseId);
+    setAnalyticsCommentsModalOpen(false);
+    setAnalyticsCommentsError(null);
+    setAnalyticsCommentsRows([]);
     await loadCourseAnalytics(courseId);
+  };
+
+  const handleOpenAnalyticsComments = async () => {
+    const post = activeAnalyticsCourse;
+    if (!post?.id) {
+      setAnalyticsCommentsRows([]);
+      setAnalyticsCommentsError('Comments are unavailable for this course post.');
+      setAnalyticsCommentsModalOpen(true);
+      return;
+    }
+    setAnalyticsCommentsModalOpen(true);
+    setAnalyticsCommentsBusy(true);
+    setAnalyticsCommentsError(null);
+    try {
+      let rows = commentsByPost[post.id] || [];
+      if (!rows.length && isOnline) {
+        rows = await aiService.getPublicComments(post.id);
+        setCommentsByPost((prev) => ({ ...prev, [post.id]: rows }));
+      }
+      hydrateCommentIdentities(rows);
+      setAnalyticsCommentsRows(rows);
+    } catch (e: any) {
+      setAnalyticsCommentsRows([]);
+      setAnalyticsCommentsError(String(e?.message || 'Failed to load comments.'));
+    } finally {
+      setAnalyticsCommentsBusy(false);
+    }
   };
 
   const closeCreatorProfile = () => {
@@ -4907,32 +6574,238 @@ export default function App() {
     setIsOpeningCourse(true);
     try {
       let source = post;
+      if (!source.snapshot) {
+        const ownMatch = myCourses.find((row) => (
+          row.id === source.id
+          || row.courseId === source.courseId
+          || (
+            String(row.ownerId || '') === String(accountId || '')
+            && String(row.title || '').trim().toLowerCase() === String(source.title || '').trim().toLowerCase()
+          )
+        ));
+        if (ownMatch?.snapshot) source = ownMatch;
+      }
       if (!source.snapshot && source.courseId) {
         const loaded = await aiService.getPublicCourse(source.courseId);
         if (loaded) source = loaded;
       }
       if (!source.snapshot) {
+        const fallbackId = String(source.courseId || '').trim();
+        const byCourseId = fallbackId ? loadStoredCourseProgress(fallbackId) : null;
+        const legacyId = source.title ? `course:${String(source.title).trim()}` : '';
+        const byLegacy = !byCourseId && legacyId ? loadStoredCourseProgress(legacyId) : null;
+        const restored = sanitizeCourse(byCourseId?.course || byLegacy?.course || null);
+        if (restored) {
+          source = {
+            ...source,
+            snapshot: restored,
+            courseId: fallbackId || legacyId || source.courseId,
+          };
+        }
+      }
+      if (!source.snapshot) {
         setCommunityError('Course details are unavailable for this post.');
         return;
       }
-      const restored = sanitizeCourse(source.snapshot);
-      if (!restored) {
+      const sourceCourseId = String(source.courseId || '').trim() || `public-post:${source.id}`;
+      const opened = openCourseForLearning(source.snapshot, {
+        courseId: sourceCourseId,
+        ownerId: String(source.ownerId || '').trim(),
+        syncBrowserPath: !!source.courseId,
+      });
+      if (!opened) {
         setCommunityError('Unable to open this course.');
         return;
       }
-      setCourse(restored);
-      const sourceCourseId = String(source.courseId || '').trim() || `public-post:${source.id}`;
-      setActiveCourseId(sourceCourseId);
-      setActiveCourseOwnerId(String(source.ownerId || '').trim());
-      if (source.courseId) setBrowserPath(source.courseId);
-      setState('learning');
-      setActiveModuleId(restored.modules[0]?.id || null);
-      setExpandedModuleId(restored.modules[0]?.id || null);
       setActiveCommunityPost(null);
       setShareModalPost(null);
       setCommunityError(null);
     } catch (e: any) {
       setCommunityError(String(e?.message || 'Unable to open this course.'));
+    } finally {
+      setIsOpeningCourse(false);
+    }
+  };
+
+  const handleContinueCraftingCourse = async (post: PublicCoursePost) => {
+    setIsOpeningCourse(true);
+    try {
+      let source = post;
+      if (!source.snapshot && source.courseId) {
+        const loaded = await aiService.getPublicCourse(source.courseId);
+        if (loaded?.snapshot) source = loaded;
+      }
+      if (!source.snapshot) {
+        const fallbackId = String(source.courseId || '').trim();
+        const byCourseId = fallbackId ? loadStoredCourseProgress(fallbackId) : null;
+        const legacyId = source.title ? `course:${String(source.title).trim()}` : '';
+        const byLegacy = !byCourseId && legacyId ? loadStoredCourseProgress(legacyId) : null;
+        const restored = sanitizeCourse(byCourseId?.course || byLegacy?.course || null);
+        if (restored) {
+          source = {
+            ...source,
+            snapshot: restored,
+            courseId: fallbackId || legacyId || source.courseId,
+          };
+        }
+      }
+      const snapshot = sanitizeCourse(source.snapshot || null);
+      if (!snapshot) {
+        setGlobalError('Course draft snapshot is unavailable.');
+        return;
+      }
+
+      const stage = getDraftCraftStage(snapshot);
+      const resolvedCourseId = getResolvedCourseProgressId(String(source.courseId || activeCourseId || ''), snapshot);
+      const ownerId = String(source.ownerId || accountId || '').trim() || String(accountId || '').trim();
+      const firstModuleId = snapshot.modules[0]?.id || null;
+      if (!isOnline && stage !== 'learning') {
+        setGlobalError('Continuing course crafting requires an internet connection.');
+        return;
+      }
+
+      setCourse(snapshot);
+      setActiveCourseId(resolvedCourseId);
+      setActiveCourseOwnerId(ownerId);
+      setBrowserPath('');
+      setActiveModuleId(firstModuleId);
+      setExpandedModuleId(firstModuleId);
+      setGlobalError(null);
+      setOutlineReviewError(null);
+      setRetryInfo(null);
+      setActiveCommunityPost(null);
+      setShareModalPost(null);
+
+      if (stage === 'outline') {
+        setState('generating_outline');
+        void (async () => {
+          try {
+            const outlineRun = await generateAllModuleContent(snapshot, {
+              generateStepContent: false,
+              regenerateLessonPlan: true,
+            });
+            if (outlineRun.failedModules.length) {
+              const failedCount = outlineRun.failedModules.length;
+              const totalCount = snapshot.modules.length;
+              if (failedCount >= totalCount) {
+                setGlobalError(`Outline generation failed for ${failedCount} module(s).`);
+                setState('idle');
+                return;
+              }
+              showMascotToast(
+                'Partial outline ready',
+                `Outline generation failed for ${failedCount} module(s). You can retry the failed modules.`,
+                'sad'
+              );
+            }
+            enterOutlineReview();
+          } catch (e: any) {
+            setGlobalError(String(e?.message || 'Unable to continue outline crafting.'));
+            setState('idle');
+          }
+        })();
+        return;
+      }
+
+      if (stage === 'outline_review') {
+        enterOutlineReview();
+        return;
+      }
+
+      if (stage === 'content') {
+        setState('generating_content');
+        void generateAllModuleContent(snapshot, {
+          generateStepContent: true,
+          regenerateLessonPlan: false,
+          resumeExistingContent: true,
+        });
+        return;
+      }
+
+      const opened = openCourseForLearning(snapshot, {
+        courseId: resolvedCourseId,
+        ownerId,
+        syncBrowserPath: true,
+      });
+      if (!opened) {
+        setGlobalError('Unable to open this course.');
+        return;
+      }
+      setActiveHomeTab('learn');
+    } catch (e: any) {
+      setGlobalError(String(e?.message || 'Unable to continue crafting this course.'));
+    } finally {
+      setIsOpeningCourse(false);
+    }
+  };
+
+  const handleContinueLearningCourse = async (row: LearningCourseSummary) => {
+    const targetCourseId = String(row?.courseId || '').trim();
+    if (!targetCourseId) return;
+    setIsOpeningCourse(true);
+    try {
+      const fallbackCourseIds = Array.from(new Set([
+        targetCourseId,
+        String(row.title || '').trim() ? `course:${String(row.title || '').trim()}` : '',
+      ].filter(Boolean)));
+
+      for (const candidateId of fallbackCourseIds) {
+        const stored = loadStoredCourseProgress(candidateId);
+        const storedCourse = sanitizeCourse(stored?.course || null);
+        if (!storedCourse) continue;
+        const openedFromLocal = openCourseForLearning(storedCourse, {
+          courseId: targetCourseId,
+          ownerId: String(row.ownerId || '').trim(),
+          syncBrowserPath: true,
+        });
+        if (openedFromLocal) {
+          setActiveHomeTab('learn');
+          return;
+        }
+      }
+
+      let post = await aiService.getPublicCourse(targetCourseId);
+      if (!post?.snapshot) {
+        const owned = myCourses.find((item) => (
+          item.courseId === targetCourseId
+          || (
+            String(item.ownerId || '') === String(accountId || '')
+            && String(item.title || '').trim().toLowerCase() === String(row.title || '').trim().toLowerCase()
+          )
+        ));
+        if (owned?.snapshot) post = owned;
+      }
+      if (!post?.snapshot && isOnline) {
+        try {
+          const mine = await aiService.listMyCourses();
+          const owned = mine.find((item) => (
+            item.courseId === targetCourseId
+            || (
+              String(item.ownerId || '') === String(accountId || '')
+              && String(item.title || '').trim().toLowerCase() === String(row.title || '').trim().toLowerCase()
+            )
+          ));
+          if (owned?.snapshot) post = owned;
+        } catch {
+          // ignore owned-course fallback errors
+        }
+      }
+      if (!post?.snapshot) {
+        setGlobalError('Unable to load this course right now.');
+        return;
+      }
+      const opened = openCourseForLearning(post.snapshot, {
+        courseId: targetCourseId,
+        ownerId: String(post.ownerId || row.ownerId || '').trim(),
+        syncBrowserPath: true,
+      });
+      if (!opened) {
+        setGlobalError('Unable to open this course.');
+        return;
+      }
+      setActiveHomeTab('learn');
+    } catch (e: any) {
+      setGlobalError(String(e?.message || 'Unable to open this course.'));
     } finally {
       setIsOpeningCourse(false);
     }
@@ -4988,9 +6861,28 @@ export default function App() {
   ) => {
     const courseId = activeCourseId || (course?.title ? `course:${course.title}` : '');
     if (!courseId) return;
+    const completionSnapshot = course
+      ? (() => {
+          const totals = course.modules.reduce(
+            (acc, module) => {
+              const moduleTotal = Array.isArray(module.steps) ? module.steps.length : 0;
+              const moduleCompleted = Array.isArray(module.steps)
+                ? module.steps.filter((step) => isStepLearnerComplete(module.id, step)).length
+                : 0;
+              return {
+                completed: acc.completed + moduleCompleted,
+                total: acc.total + moduleTotal,
+              };
+            },
+            { completed: 0, total: 0 }
+          );
+          return totals.total ? Math.round((totals.completed / totals.total) * 100) : 0;
+        })()
+      : 0;
     const eventPayload = {
       courseTitle: course?.title || '',
       courseDescription: course?.description || '',
+      completionRate: completionSnapshot,
       ...payload,
     };
     const item = {
@@ -5125,8 +7017,8 @@ export default function App() {
 
   useEffect(() => {
     if (!isOnline || !course) return;
-    // Only persist full snapshots once learner-facing content exists.
-    if (state !== 'learning') return;
+    // Persist drafts and completed snapshots so created-course rows stay in sync across refreshes.
+    if (!['generating_outline', 'outline_review', 'generating_content', 'learning'].includes(state)) return;
     if (course.title === SAMPLE_COURSE.title && course.description === SAMPLE_COURSE.description) return;
     const ownerByCourseId = !!activeCourseId && myCourses.some((post) => (
       post.courseId === activeCourseId && post.ownerId === accountId
@@ -5165,6 +7057,32 @@ export default function App() {
         const published = await aiService.publishCourse(course, targetVisibility, matched?.courseId || activeCourseId || '');
         if (cancelled) return;
         if (published?.courseId) {
+          const targetCourseId = String(published.courseId || '').trim();
+          const legacyIds = Array.from(new Set([
+            String(activeCourseId || '').trim(),
+            getResolvedCourseProgressId('', course),
+            String(matched?.courseId || '').trim(),
+          ].filter(Boolean)));
+          if (targetCourseId && !loadStoredCourseProgress(targetCourseId)) {
+            for (const legacyId of legacyIds) {
+              if (!legacyId || legacyId === targetCourseId) continue;
+              const legacyStored = loadStoredCourseProgress(legacyId);
+              if (!legacyStored) continue;
+              try {
+                localStorage.setItem(
+                  getCourseProgressStorageKey(targetCourseId),
+                  JSON.stringify({
+                    ...legacyStored,
+                    courseId: targetCourseId,
+                    updatedAt: new Date().toISOString(),
+                  } as StoredCourseProgress)
+                );
+              } catch {
+                // ignore migration write failures
+              }
+              break;
+            }
+          }
           setActiveCourseId(published.courseId);
           setActiveCourseOwnerId(accountId);
           setBrowserPath(published.courseId);
@@ -5217,6 +7135,77 @@ export default function App() {
 
   const addPoints = (amount: number) => {
     setPoints(prev => prev + amount);
+  };
+
+  const clearInterviewRuntime = () => {
+    stopInterviewRecording();
+    setRecordingQuestionId(null);
+    setInterviewTranscribingQuestionId(null);
+    speechRecognitionRef.current = null;
+    clearInterviewMediaStream();
+    setInterviewRecordingElapsedSeconds(0);
+    setInterviewVoiceWaveBars(Array.from({ length: 24 }, () => 0.08));
+    setInterviewRecordedSecondsByQuestionId({});
+    setInterviewAnswerModeByQuestionId({});
+    setInterviewVoiceMetaByQuestionId({});
+    setInterviewBusy(false);
+    setInterviewFinalBusy(false);
+    setInterviewReviewProgress(0);
+  };
+
+  const handleReturnHomeFromInterview = () => {
+    clearInterviewRuntime();
+    setInterviewSession(null);
+    setInterviewActiveQuestionIdx(0);
+    setInterviewAnswersByQuestionId({});
+    setInterviewFeedbackByQuestionId({});
+    setInterviewFinalReview(null);
+    setInterviewReviewOpen(false);
+    setInterviewError(null);
+    setComposerMode('default');
+    setState('idle');
+    setActiveHomeTab('learn');
+    setActiveCommunityPost(null);
+  };
+
+  const openInterviewFromHistory = (entry: InterviewHistoryEntry, mode: 'practice' | 'review') => {
+    if (!entry?.session?.questions?.length) return;
+    clearInterviewRuntime();
+    const roleTitle = String(entry.jobTitle || entry.session.role?.jobTitle || '').trim();
+    if (roleTitle) {
+      setPrompt(roleTitle);
+      setSelectedInterviewJobTitle(roleTitle);
+    }
+    setInterviewQuestionFocus(entry.questionFocus);
+    setInterviewSeniority(entry.seniority);
+    setInterviewTargetLanguage(normalizeInterviewLanguageSelection(entry.targetLanguage || localeToInterviewLanguage(locale)));
+    setInterviewSession(entry.session);
+    setInterviewActiveQuestionIdx(0);
+    if (mode === 'review' && entry.finalReview) {
+      setInterviewAnswersByQuestionId({ ...entry.answersByQuestionId });
+      setInterviewFeedbackByQuestionId({ ...entry.feedbackByQuestionId });
+      setInterviewFinalReview(entry.finalReview);
+      setInterviewReviewOpen(true);
+      setInterviewReviewProgress(100);
+    } else {
+      setInterviewAnswersByQuestionId({});
+      setInterviewFeedbackByQuestionId({});
+      setInterviewFinalReview(null);
+      setInterviewReviewOpen(false);
+      setInterviewReviewProgress(0);
+    }
+    setInterviewError(null);
+    setComposerMode('default');
+    setState('interviewing');
+    setActiveHomeTab('learn');
+  };
+
+  const handlePracticeInterviewFromHistory = (entry: InterviewHistoryEntry) => {
+    openInterviewFromHistory(entry, 'practice');
+  };
+
+  const handleOpenInterviewHistoryReport = (entry: InterviewHistoryEntry) => {
+    openInterviewFromHistory(entry, 'review');
   };
 
   const navigateHome = () => {
@@ -5289,6 +7278,20 @@ export default function App() {
       autoRetriedVideoStepsRef.current.clear();
       autoRetriedFallbackStepsRef.current.clear();
       localStorage.removeItem('nexus_progress');
+      try {
+        const keysToClear: string[] = [];
+        for (let idx = 0; idx < localStorage.length; idx += 1) {
+          const key = localStorage.key(idx) || '';
+          if (key.startsWith(COURSE_PROGRESS_STORAGE_PREFIX)) {
+            keysToClear.push(key);
+          }
+        }
+        for (const key of keysToClear) {
+          localStorage.removeItem(key);
+        }
+      } catch {
+        // ignore storage errors
+      }
       setBrowserPath('');
     }
   };
@@ -5642,9 +7645,10 @@ export default function App() {
     }
 
     if (result.passed) {
-      showMascotToast('Good job!', `Quiz passed with ${result.percentage}% score.`, 'happy');
       if (isFinalAssessment) {
         handleModuleComplete(moduleId);
+      } else {
+        showMascotToast('Good job!', `Quiz passed with ${result.percentage}% score.`, 'happy');
       }
     } else {
       showMascotToast('Keep going!', `You scored ${result.percentage}%. Try again to improve.`, 'sad');
@@ -5711,6 +7715,48 @@ export default function App() {
     region: profileDraft.region || '',
     preferredLanguage: locale || 'en',
   });
+
+  const handleAddCustomCareerRole = async () => {
+    if (!careerGuidanceEnabled || careerCustomRoleBusy) return;
+    const title = normalizePromptInput(careerCustomRoleInput).slice(0, 120);
+    if (!title) return;
+
+    const existing = mergeCareerGuidanceRoles(careerGuidanceRoles, customCareerGuides, 16)
+      .find((guide) => String(guide.title || '').trim().toLowerCase() === title.toLowerCase());
+    if (existing) {
+      setSelectedInterviewJobTitle(existing.title);
+      setPrompt(existing.title);
+      setCareerCustomRoleInput('');
+      setCareerGuidanceNotice(null);
+      return;
+    }
+
+    setCareerCustomRoleBusy(true);
+    setCareerGuidanceNotice(null);
+    try {
+      const analyzed = await aiService.getProfileCareerGuidanceRole({
+        profile: buildInterviewProfilePayload(),
+        interests: careerInterests,
+        roleTitle: title,
+      });
+      const normalized = normalizeCareerGuidanceRoles(analyzed ? [analyzed] : [], 1)[0];
+      if (!normalized) {
+        setCareerGuidanceNotice(`Could not analyze "${title}" right now. Please try again.`);
+        return;
+      }
+      setCustomCareerGuides((prev) => {
+        const next = [normalized, ...prev.filter((guide) => String(guide.title || '').trim().toLowerCase() !== normalized.title.toLowerCase())];
+        return next.slice(0, 8);
+      });
+      setSelectedInterviewJobTitle(normalized.title);
+      setPrompt(normalized.title);
+      setCareerCustomRoleInput('');
+    } catch (e: any) {
+      setCareerGuidanceNotice(String(e?.message || `Could not analyze "${title}" right now. Please try again.`));
+    } finally {
+      setCareerCustomRoleBusy(false);
+    }
+  };
 
   const clearInterviewRecordingTimer = () => {
     if (recordingTimerRef.current == null) return;
@@ -6043,12 +8089,23 @@ export default function App() {
       setInterviewError('Upload and validate your CV first to unlock interview preparation mode.');
       return;
     }
-    const roleTitle = normalizePromptInput(requestedRole || selectedInterviewJobTitle || prompt);
-    if (!roleTitle) {
-      setInterviewError('Select a recommended job or type the target job title first.');
+    const requestedRoleRaw = requestedRole || selectedInterviewJobTitle || prompt;
+    const roleValidationError = getInterviewRoleValidationError(requestedRoleRaw);
+    if (roleValidationError) {
+      const unsafeInput = roleValidationError.toLowerCase().includes('disallowed sexual or hate');
+      if (unsafeInput) {
+        setState('idle');
+        setActiveHomeTab('learn');
+        setComposerMode('default');
+        setGlobalError(roleValidationError);
+        setInterviewError(null);
+        return;
+      }
+      setInterviewError(roleValidationError);
       setShakePrompt(true);
       return;
     }
+    const roleTitle = normalizeInterviewRoleInput(requestedRoleRaw);
     setPrompt(roleTitle);
     setSelectedInterviewJobTitle(roleTitle);
     setInterviewError(null);
@@ -6065,12 +8122,23 @@ export default function App() {
       setInterviewError('Upload and validate your CV first to unlock interview preparation mode.');
       return;
     }
-    const roleTitle = normalizePromptInput(requestedRole || selectedInterviewJobTitle || prompt);
-    if (!roleTitle) {
-      setInterviewError('Select a recommended job or type the target job title first.');
+    const requestedRoleRaw = requestedRole || selectedInterviewJobTitle || prompt;
+    const roleValidationError = getInterviewRoleValidationError(requestedRoleRaw);
+    if (roleValidationError) {
+      const unsafeInput = roleValidationError.toLowerCase().includes('disallowed sexual or hate');
+      if (unsafeInput) {
+        setState('idle');
+        setActiveHomeTab('learn');
+        setComposerMode('default');
+        setGlobalError(roleValidationError);
+        setInterviewError(null);
+        return;
+      }
+      setInterviewError(roleValidationError);
       setShakePrompt(true);
       return;
     }
+    const roleTitle = normalizeInterviewRoleInput(requestedRoleRaw);
     setPrompt(roleTitle);
     setSelectedInterviewJobTitle(roleTitle);
     setState('interviewing');
@@ -6105,7 +8173,21 @@ export default function App() {
       setInterviewError(null);
 	    } catch (e: any) {
 	      setInterviewSession(null);
+	      const status = Number(e?.status || 0);
+	      const code = String(e?.code || '').trim();
 	      const message = String(e?.message || '').trim();
+	      const unsafeInput = status === 422 && (
+	        code === 'INTERVIEW_INPUT_UNSAFE'
+	        || message.toLowerCase().includes('disallowed sexual or hate')
+	      );
+	      if (unsafeInput) {
+	        setState('idle');
+	        setActiveHomeTab('learn');
+	        setComposerMode('default');
+	        setGlobalError(message || 'Interview role contains disallowed content. Please use a professional job title.');
+	        setInterviewError(null);
+	        return;
+	      }
 	      setInterviewError(message || 'Failed to generate interview preparation session.');
 	    } finally {
 	      setInterviewBusy(false);
@@ -6188,6 +8270,26 @@ export default function App() {
       });
       setInterviewReviewProgress(100);
       setInterviewFinalReview(review);
+      const nowIso = new Date().toISOString();
+      const answersSnapshot = items.reduce<Record<string, string>>((acc, item) => {
+        acc[item.questionId] = item.answer;
+        return acc;
+      }, {});
+      const historyEntry: InterviewHistoryEntry = {
+        id: `interview-${nowIso}-${Math.random().toString(36).slice(2, 10)}`,
+        accountId,
+        createdAt: nowIso,
+        jobTitle: String(interviewSession.role?.jobTitle || selectedInterviewJobTitle || prompt || '').trim() || 'Interview session',
+        questionFocus: interviewQuestionFocus,
+        seniority: interviewSeniority,
+        targetLanguage: normalizeInterviewLanguageSelection(interviewTargetLanguage),
+        session: interviewSession,
+        finalReview: review,
+        answersByQuestionId: answersSnapshot,
+        feedbackByQuestionId: feedbackMap,
+        answeredCount: items.length,
+      };
+      setInterviewHistoryRows((prev) => [historyEntry, ...prev].slice(0, INTERVIEW_HISTORY_MAX_ROWS));
     } catch (e: any) {
       setInterviewError(String(e?.message || 'Failed to generate final interview review.'));
     } finally {
@@ -6348,7 +8450,7 @@ export default function App() {
         const failedCount = outlineRun.failedModules.length;
         const totalCount = initializedPlan.modules.length;
         if (failedCount >= totalCount) {
-          setGlobalError(`Outline generation failed for ${failedCount} module(s). Please retry or switch provider/model.`);
+          setGlobalError(`Outline generation failed for ${failedCount} module(s). Please try again.`);
           setState('idle');
           return;
         }
@@ -6373,13 +8475,15 @@ export default function App() {
     options: {
       generateStepContent?: boolean;
       regenerateLessonPlan?: boolean;
+      resumeExistingContent?: boolean;
     } = {}
   ): Promise<{ failedModules: string[] }> => {
     const generateStepContent = !!options.generateStepContent;
     const regenerateLessonPlan = options.regenerateLessonPlan !== false;
+    const resumeExistingContent = !!options.resumeExistingContent;
     const isOutlinePass = !generateStepContent;
 
-    if (generateStepContent) {
+    if (generateStepContent && !resumeExistingContent) {
       // Reset module + step statuses so queued modules don't look completed.
       setCourse((prev) => {
         if (!prev) return null;
@@ -6392,6 +8496,7 @@ export default function App() {
               ...s,
               status: 'pending' as const,
               content: undefined,
+              errorMessage: undefined,
             })),
           })),
         };
@@ -6403,7 +8508,7 @@ export default function App() {
 
     const failedModuleIds = new Set<string>();
     const failedModuleTitles = new Map<string, string>();
-    const manualModelSelected = !!routerModel && routerModel !== 'auto';
+    const manualModelSelected = routerProvider !== 'auto';
     const effectiveParallelWorkers = manualModelSelected
       ? Math.min(2, MODULE_PARALLEL_WORKERS)
       : MODULE_PARALLEL_WORKERS;
@@ -6450,11 +8555,22 @@ export default function App() {
         }
 
         if (generateStepContent) {
-          moduleSteps = moduleSteps.map((step) => ({
-            ...step,
-            status: 'pending',
-            content: undefined,
-          }));
+          moduleSteps = moduleSteps.map((step) => {
+            const keepExisting = resumeExistingContent && !!step.content;
+            if (keepExisting) {
+              return {
+                ...step,
+                status: 'completed',
+                errorMessage: undefined,
+              };
+            }
+            return {
+              ...step,
+              status: 'pending',
+              content: undefined,
+              errorMessage: undefined,
+            };
+          });
         }
 
         setCourse((prev) => {
@@ -6475,9 +8591,12 @@ export default function App() {
         if (!generateStepContent) return;
 
         let workingSteps = [...moduleSteps];
-        let moduleHasError = false;
+        let moduleHasError = workingSteps.some((s) => s.status === 'error');
+        const stepsToGenerate = resumeExistingContent
+          ? moduleSteps.filter((step) => !step.content)
+          : moduleSteps;
 
-        for (const step of moduleSteps) {
+        for (const step of stepsToGenerate) {
           setCourse((prev) => {
             if (!prev) return null;
             return {
@@ -6486,7 +8605,11 @@ export default function App() {
                 if (m.id !== mod.id) return m;
                 return {
                   ...m,
-                  steps: m.steps.map((s) => (s.id === step.id ? { ...s, status: 'generating' as const } : s)),
+                  steps: m.steps.map((s) => (
+                    s.id === step.id
+                      ? { ...s, status: 'generating' as const, errorMessage: undefined }
+                      : s
+                  )),
                 };
               }),
             };
@@ -6518,14 +8641,15 @@ export default function App() {
 
             workingSteps = workingSteps.map((s) =>
               s.id === step.id
-                ? { ...s, status: 'completed' as const, content: sanitizedContent }
+                ? { ...s, status: 'completed' as const, content: sanitizedContent, errorMessage: undefined }
                 : s
             );
           } catch (stepError) {
             console.error(`Failed to generate step ${step.title}`, stepError);
             moduleHasError = true;
+            const stepErrorMessage = formatGenerationErrorMessage(stepError, step.type);
             workingSteps = workingSteps.map((s) =>
-              s.id === step.id ? { ...s, status: 'error' as const } : s
+              s.id === step.id ? { ...s, status: 'error' as const, errorMessage: stepErrorMessage } : s
             );
           }
 
@@ -6679,6 +8803,7 @@ export default function App() {
 
     const allChanges: OutlineEditChange[] = [];
     const failedModules: string[] = [];
+    const blockedMessages: string[] = [];
 
     for (const [moduleId, instructions] of groupedByModule.entries()) {
       const module = course.modules.find((m) => m.id === moduleId);
@@ -6707,47 +8832,105 @@ export default function App() {
         };
       });
 
-      const moduleInstruction = instructions
-        .map(({ target, prompt }) => `- ${target.label}: ${prompt}`)
-        .join('\n');
-
       try {
-        const previousSignature = (Array.isArray(module.steps) ? module.steps : [])
-          .map((step) => `${step.type}:${stripStructuredStepPrefix(step.title || '')}`)
-          .join('|');
+        let workingModule: Module = {
+          ...module,
+          steps: Array.isArray(module.steps) ? module.steps.map((step) => ({ ...step })) : [],
+          status: 'generating',
+        };
         const moduleIndex = Math.max(0, course.modules.findIndex((m) => m.id === moduleId));
         const buildSteps = (generated: Array<{ id: string; title: string; type: ContentType }>) => ensureLessonStepCoverage(
-          normalizeGeneratedLessonSteps(generated, moduleIndex + 1, module.title),
-          module.title,
+          normalizeGeneratedLessonSteps(generated, moduleIndex + 1, workingModule.title),
+          workingModule.title,
           course.title
         );
-        const requestLessonPlan = async (extraInstruction: string) => aiService.generateModuleLessonPlan(
-          course.title,
-          module.title,
-          `${module.description}\n\nTargeted edits:\n${moduleInstruction}${extraInstruction ? `\n\n${extraInstruction}` : ''}`,
-          { forceFresh: true, requireAi: true },
-          (attempt, delay) => {
-            setRetryInfo({ attempt, delay });
+        const requestScopedLessonPlan = async (
+          target: OutlineEditTarget,
+          instruction: string,
+          extraInstruction = ''
+        ) => {
+          const scopeLines = [
+            `Edit scope target: ${target.label}`,
+            typeof target.lessonNumber === 'number' ? `Target lesson number: ${target.lessonNumber}` : '',
+            target.type === 'subcontent'
+              ? `Target sub-content: lesson ${target.lessonNumber ?? '?'} segment ${target.segmentNumber ?? '?'} (${target.stepTitle || ''})`
+              : '',
+            `Instruction: ${instruction}`,
+            'Hard constraints:',
+            '- Preserve all lessons and sub-contents outside the target scope.',
+            '- If instruction is title/name change only, only rename titles in scope.',
+            '- If instruction says replace lesson/sub-content, replace in-place (do not append a new lesson unless asked to add).',
+            '- Module deletion is forbidden.',
+            extraInstruction,
+          ].filter(Boolean).join('\n');
+
+          return aiService.generateModuleLessonPlan(
+            course.title,
+            workingModule.title,
+            `${workingModule.description}\n\nCurrent module lesson map:\n${buildModuleLessonMapContext(workingModule)}\n\n${scopeLines}`,
+            { forceFresh: true, requireAi: true },
+            (attempt, delay) => {
+              setRetryInfo({ attempt, delay });
+            }
+          );
+        };
+
+        for (const { target, prompt } of instructions) {
+          setOutlineProcessingTargetKey(target.key);
+          if (typeof target.lessonNumber === 'number') {
+            setOutlineReviewLessonByModule((prev) => ({ ...prev, [moduleId]: target.lessonNumber as number }));
           }
-        );
 
-        let generated = await requestLessonPlan('');
-        let steps = buildSteps(generated);
-        let nextSignature = steps
-          .map((step) => `${step.type}:${stripStructuredStepPrefix(step.title || '')}`)
-          .join('|');
+          const direct = applyDirectOutlineEditToModule(workingModule, target, prompt);
+          if (direct.applied) {
+            workingModule = {
+              ...direct.module,
+              status: 'generating',
+            };
+            if (direct.blockedReason) {
+              blockedMessages.push(`${target.label}: ${direct.blockedReason}`);
+            }
+            continue;
+          }
 
-        if (previousSignature && previousSignature === nextSignature) {
-          generated = await requestLessonPlan('Critical: Apply the targeted edits with at least one visible title/structure change in this module.');
-          steps = buildSteps(generated);
-          nextSignature = steps
-            .map((step) => `${step.type}:${stripStructuredStepPrefix(step.title || '')}`)
-            .join('|');
+          const beforeTarget = resolveOutlineTargetSnapshot(workingModule, target);
+          let generated = await requestScopedLessonPlan(target, prompt);
+          let candidateSteps = buildSteps(generated);
+          let mergedModule = applyGeneratedScopedEditToModule(workingModule, target, prompt, candidateSteps);
+          let afterTarget = resolveOutlineTargetSnapshot(mergedModule, target);
+
+          if (normalizeOutlineSnapshot(beforeTarget) === normalizeOutlineSnapshot(afterTarget)) {
+            generated = await requestScopedLessonPlan(
+              target,
+              prompt,
+              'Critical: apply at least one visible change inside the target scope only.'
+            );
+            candidateSteps = buildSteps(generated);
+            mergedModule = applyGeneratedScopedEditToModule(workingModule, target, prompt, candidateSteps);
+            afterTarget = resolveOutlineTargetSnapshot(mergedModule, target);
+          }
+
+          if (
+            normalizeOutlineSnapshot(beforeTarget) === normalizeOutlineSnapshot(afterTarget)
+            && promptHasReplaceIntent(prompt)
+            && target.type !== 'module'
+          ) {
+            const forcedModule = applyForcedScopedReplacementToModule(workingModule, target, prompt);
+            const forcedAfter = resolveOutlineTargetSnapshot(forcedModule, target);
+            if (normalizeOutlineSnapshot(beforeTarget) !== normalizeOutlineSnapshot(forcedAfter)) {
+              mergedModule = forcedModule;
+              afterTarget = forcedAfter;
+            }
+          }
+
+          workingModule = {
+            ...mergedModule,
+            status: 'generating',
+          };
         }
 
         const updatedModule: Module = {
-          ...module,
-          steps,
+          ...workingModule,
           status: 'completed',
         };
         const moduleChanges = instructions.map(({ target, prompt }) => {
@@ -6772,11 +8955,11 @@ export default function App() {
           return {
             ...prev,
             modules: prev.modules.map((m) =>
-              m.id === moduleId ? { ...m, steps, status: 'completed' as const } : m
+              m.id === moduleId ? { ...updatedModule, status: 'completed' as const } : m
             ),
           };
         });
-        const firstLesson = steps.find((step) => typeof step.lessonNumber === 'number')?.lessonNumber;
+        const firstLesson = updatedModule.steps.find((step) => typeof step.lessonNumber === 'number')?.lessonNumber;
         if (typeof firstLesson === 'number') {
           setOutlineReviewLessonByModule((prev) => ({ ...prev, [moduleId]: firstLesson }));
         }
@@ -6846,6 +9029,8 @@ export default function App() {
         `Recraft failed for ${failedModules.length} module(s): ${failedModules.join(', ')}.`
       );
       showMascotToast('Some edits failed', 'Check the error and retry the affected modules.', 'sad');
+    } else if (blockedMessages.length) {
+      setOutlineReviewError(`Some requests were constrained: ${blockedMessages.join(' | ')}`);
     }
   };
 
@@ -6964,14 +9149,18 @@ export default function App() {
             return {
               ...m,
               status: 'generating' as const,
-              steps: m.steps.map((s) => (retrySet.has(s.id) ? { ...s, status: 'loading' as const } : s)),
+              steps: m.steps.map((s) => (
+                retrySet.has(s.id)
+                  ? { ...s, status: 'loading' as const, errorMessage: undefined }
+                  : s
+              )),
             };
           }),
         };
       });
 
       let workingSteps = mod.steps.map((step) =>
-        retrySet.has(step.id) ? { ...step, status: 'loading' as const } : step
+        retrySet.has(step.id) ? { ...step, status: 'loading' as const, errorMessage: undefined } : step
       );
       let moduleHasError = false;
 
@@ -6997,13 +9186,14 @@ export default function App() {
             moduleHasError = true;
           }
           workingSteps = workingSteps.map((s) =>
-            s.id === step.id ? { ...s, status: 'completed' as const, content: sanitized } : s
+            s.id === step.id ? { ...s, status: 'completed' as const, content: sanitized, errorMessage: undefined } : s
           );
         } catch (e) {
           console.error(`Failed to retry step ${step.title}`, e);
           moduleHasError = true;
+          const retryErrorMessage = formatGenerationErrorMessage(e, step.type);
           workingSteps = workingSteps.map((s) =>
-            s.id === step.id ? { ...s, status: 'error' as const } : s
+            s.id === step.id ? { ...s, status: 'error' as const, errorMessage: retryErrorMessage } : s
           );
         }
 
@@ -7133,13 +9323,23 @@ export default function App() {
 
       addPoints(500);
       setStreak(prev => prev + 1);
-      showMascotToast('Module cleared!', 'SEA-Geko unlocked the next module for you.', 'happy');
+      if (willCompleteCourse) {
+        showMascotToast(
+          'Congratulations!',
+          'You finished the full course and unlocked a collectible card in Hall of Fame.',
+          'happy'
+        );
+      } else {
+        showMascotToast('Module cleared!', 'SEA-Geko unlocked the next module for you.', 'happy');
+      }
 
       return { ...prev, modules: newModules };
     });
     void trackImpactEvent('lesson_completed', { moduleId });
     if (willCompleteCourse) {
       void trackImpactEvent('course_completed', { moduleId });
+      const resolvedCourseId = getResolvedCourseProgressId(activeCourseId, currentCourse);
+      awardHallOfFameCollectible(resolvedCourseId, currentCourse);
     }
   };
 
@@ -7183,7 +9383,11 @@ export default function App() {
           if (m.id !== moduleId) return m;
           return {
             ...m,
-            steps: m.steps.map(s => s.id === stepId ? { ...s, status: 'loading' as const } : s)
+            steps: m.steps.map(s => (
+              s.id === stepId
+                ? { ...s, status: 'loading' as const, errorMessage: undefined }
+                : s
+            ))
           };
         })
       };
@@ -7209,13 +9413,18 @@ export default function App() {
             if (m.id !== moduleId) return m;
             return {
               ...m,
-              steps: m.steps.map(s => s.id === stepId ? { ...s, status: 'completed' as const } : s)
+              steps: m.steps.map(s => (
+                s.id === stepId
+                  ? { ...s, status: 'completed' as const, errorMessage: undefined }
+                  : s
+              ))
             };
           })
         };
       });
     } catch (e) {
       console.error(e);
+      const retryErrorMessage = formatGenerationErrorMessage(e, step.type);
       setCourse(prev => {
         if (!prev) return null;
         return {
@@ -7224,7 +9433,11 @@ export default function App() {
             if (m.id !== moduleId) return m;
             return {
               ...m,
-              steps: m.steps.map(s => s.id === stepId ? { ...s, status: 'error' as const } : s)
+              steps: m.steps.map(s => (
+                s.id === stepId
+                  ? { ...s, status: 'error' as const, errorMessage: retryErrorMessage }
+                  : s
+              ))
             };
           })
         };
@@ -7260,7 +9473,11 @@ export default function App() {
                 if (m.id !== activeModuleId) return m;
                 return {
                   ...m,
-                  steps: m.steps.map(s => s.id === pendingStep.id ? { ...s, status: 'generating' as const } : s)
+                  steps: m.steps.map(s => (
+                    s.id === pendingStep.id
+                      ? { ...s, status: 'generating' as const, errorMessage: undefined }
+                      : s
+                  ))
                 };
               })
             };
@@ -7289,7 +9506,9 @@ export default function App() {
                 return {
                   ...m,
                   steps: m.steps.map(s => 
-                    s.id === pendingStep.id ? { ...s, content: sanitizeModuleContent(content, pendingStep.title), status: 'completed' as const } : s
+                    s.id === pendingStep.id
+                      ? { ...s, content: sanitizeModuleContent(content, pendingStep.title), status: 'completed' as const, errorMessage: undefined }
+                      : s
                   )
                 };
               })
@@ -7297,6 +9516,7 @@ export default function App() {
           });
         } catch (e) {
           console.error(`Failed to generate step ${pendingStep.title}`, e);
+          const pendingStepErrorMessage = formatGenerationErrorMessage(e, pendingStep.type);
           setCourse(prev => {
             if (!prev) return null;
             return {
@@ -7305,7 +9525,11 @@ export default function App() {
                 if (m.id !== activeModuleId) return m;
                 return {
                   ...m,
-                  steps: m.steps.map(s => s.id === pendingStep.id ? { ...s, status: 'error' as const } : s)
+                  steps: m.steps.map(s => (
+                    s.id === pendingStep.id
+                      ? { ...s, status: 'error' as const, errorMessage: pendingStepErrorMessage }
+                      : s
+                  ))
                 };
               })
             };
@@ -7411,15 +9635,20 @@ export default function App() {
   const activeCourseOwnedByMe = (
     String(activeCourseOwnerId || '').trim() === String(accountId || '').trim()
     || (!!activeCourseId && myCourseIdSet.has(activeCourseId))
+    || (
+      !!course
+      && !!String(accountId || '').trim()
+      && ['generating_outline', 'outline_review', 'generating_content'].includes(state)
+    )
   );
   const canShowDraftCourse = !!course
     && !isSampleCourseActive
     && activeCourseOwnedByMe
-    && (!activeCourseId || myCourseIdSet.has(activeCourseId));
+    && (!activeCourseId || myCourseIdSet.has(activeCourseId) || activeCourseId.startsWith('course:'));
   const draftCoursePost = canShowDraftCourse && course
     ? ({
         id: `draft-${course.title}`,
-        courseId: activeCourseId || course.title,
+        courseId: getResolvedCourseProgressId(activeCourseId, course),
         ownerId: accountId,
         title: course.title,
         description: course.description,
@@ -7445,28 +9674,66 @@ export default function App() {
   })();
   const currentlyLearningCourses = useMemo(() => {
     const dedup = new Map<string, LearningCourseSummary>();
+    const upsertRow = (row: LearningCourseSummary) => {
+      const courseId = String(row?.courseId || '').trim();
+      if (!courseId) return;
+      const existing = dedup.get(courseId);
+      if (!existing) {
+        dedup.set(courseId, row);
+        return;
+      }
+      const existingUpdatedAt = String(existing.lastActiveAt || existing.startedAt || '');
+      const nextUpdatedAt = String(row.lastActiveAt || row.startedAt || '');
+      if (nextUpdatedAt && nextUpdatedAt >= existingUpdatedAt) {
+        dedup.set(courseId, { ...existing, ...row });
+      }
+    };
+
     for (const row of learningCourses || []) {
       const courseId = String(row?.courseId || '').trim();
       if (!courseId) continue;
-      const ownerId = String(row?.ownerId || '').trim();
-      const shouldAppear = !myCourseIdSet.has(courseId) || (ownerId && ownerId !== accountId);
-      if (!shouldAppear) continue;
-      if (!dedup.has(courseId)) dedup.set(courseId, row);
+      upsertRow(row);
     }
-    if (state === 'learning' && course && activeCourseId && !myCourseIdSet.has(activeCourseId) && !dedup.has(activeCourseId)) {
-      dedup.set(activeCourseId, {
-        courseId: activeCourseId,
-        ownerId: '',
-        title: course.title || activeCourseId,
-        description: course.description || '',
-        visibility: 'public',
-        startedAt: '',
-        lastActiveAt: new Date().toISOString(),
-        metrics: impactMetrics,
+
+    for (const localRow of listStoredCourseProgressRows()) {
+      const ownedPost = profileCreatedCourses.find((post) => (
+        String(post.courseId || '').trim() === localRow.courseId
+        || String(post.title || '').trim().toLowerCase() === String(localRow.course?.title || '').trim().toLowerCase()
+      ));
+      const completionPct = Math.max(0, Math.min(100, Number(localRow.completionPct || 0)));
+      upsertRow({
+        courseId: localRow.courseId,
+        ownerId: String(ownedPost?.ownerId || ''),
+        title: localRow.course.title || localRow.courseId,
+        description: localRow.course.description || '',
+        visibility: (ownedPost?.visibility || 'public') as 'private' | 'public',
+        startedAt: String(localRow.stored?.updatedAt || ''),
+        lastActiveAt: String(localRow.updatedAt || ''),
+        metrics: {
+          ...DEFAULT_IMPACT,
+          completionRate: completionPct,
+        },
       });
     }
+
+    if (state === 'learning' && course) {
+      const resolvedCourseId = getResolvedCourseProgressId(activeCourseId, course);
+      if (resolvedCourseId) {
+        upsertRow({
+          courseId: resolvedCourseId,
+          ownerId: String(activeCourseOwnerId || ''),
+          title: course.title || resolvedCourseId,
+          description: course.description || '',
+          visibility: 'public',
+          startedAt: '',
+          lastActiveAt: new Date().toISOString(),
+          metrics: impactMetrics,
+        });
+      }
+    }
+
     return Array.from(dedup.values()).slice(0, 12);
-  }, [learningCourses, myCourseIdSet, accountId, state, course, activeCourseId, impactMetrics]);
+  }, [learningCourses, profileCreatedCourses, state, course, activeCourseId, activeCourseOwnerId, impactMetrics]);
   const activeAnalyticsCourse = useMemo(
     () => myCourses.find((post) => post.courseId === activeAnalyticsCourseId) || null,
     [myCourses, activeAnalyticsCourseId]
@@ -7538,8 +9805,8 @@ export default function App() {
     [careerInterestsInput, profileDraft.learningGoal]
   );
   const matchedCareerGuides = useMemo(
-    () => (careerGuidanceEnabled ? selectCareerGuides(careerInterests, cvProfile?.skills || []) : []),
-    [careerGuidanceEnabled, careerInterests, cvProfile?.skills]
+    () => (careerGuidanceEnabled ? mergeCareerGuidanceRoles(careerGuidanceRoles, customCareerGuides, 8) : []),
+    [careerGuidanceEnabled, careerGuidanceRoles, customCareerGuides]
   );
   const fallbackInterviewJobs = useMemo(
     () => matchedCareerGuides.map((guide) => ({
@@ -7621,6 +9888,79 @@ export default function App() {
       setRecordingQuestionId(null);
     }
   }, [interviewVoiceSupported, recordingQuestionId]);
+
+  useEffect(() => {
+    if (!careerGuidanceEnabled || !cvProfile) {
+      setCareerGuidanceRoles([]);
+      setCareerGuidanceBusy(false);
+      setCareerGuidanceNotice(null);
+      return;
+    }
+    const profilePayload = buildInterviewProfilePayload();
+    const signature = buildCareerGuidanceSignature(profilePayload, careerInterests);
+    const cacheKey = `nexus_career_guidance_cache_${accountId}`;
+    try {
+      const raw = localStorage.getItem(cacheKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (String(parsed?.signature || '') === signature) {
+          const cached = normalizeCareerGuidanceRoles(parsed?.roles || [], 8);
+          setCareerGuidanceRoles(cached);
+          setCareerGuidanceBusy(false);
+          setCareerGuidanceNotice(cached.length ? null : 'No role guidance generated yet. Add specific interests and retry.');
+          return;
+        }
+      }
+    } catch {
+      // ignore cache read errors and continue with fresh fetch
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      (async () => {
+        setCareerGuidanceBusy(true);
+        setCareerGuidanceNotice(null);
+        try {
+          const roles = await aiService.getProfileCareerGuidance({
+            profile: profilePayload,
+            interests: careerInterests,
+          });
+          if (cancelled) return;
+          const normalized = normalizeCareerGuidanceRoles(roles, 8);
+          setCareerGuidanceRoles(normalized);
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify({
+              signature,
+              roles: normalized,
+              updatedAt: new Date().toISOString(),
+            }));
+          } catch {
+            // ignore cache write errors
+          }
+          if (!normalized.length) {
+            setCareerGuidanceNotice('No role guidance generated yet. Add specific interests and retry.');
+          }
+        } catch (e: any) {
+          if (cancelled) return;
+          setCareerGuidanceRoles([]);
+          setCareerGuidanceNotice(String(e?.message || 'Could not generate career guidance right now.'));
+        } finally {
+          if (!cancelled) setCareerGuidanceBusy(false);
+        }
+      })();
+    }, 450);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [
+    accountId,
+    careerGuidanceEnabled,
+    cvProfile,
+    careerInterests,
+    profileDraft.learningGoal,
+    profileDraft.region,
+    locale,
+  ]);
 
   useEffect(() => {
     if (composerMode !== 'interview') {
@@ -7881,24 +10221,21 @@ export default function App() {
 			                listClassName="w-[230px] right-0 left-auto"
 			              />
 			            </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowStarter(true)}
-                    className="h-9 w-9 rounded-xl border border-slate-200 bg-white text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors flex items-center justify-center"
-                    title="Back to starter page"
-                    aria-label="Back to starter page"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                  </button>
-		            {state === 'learning' ? (
+		            {(state === 'learning' || state === 'interview_setup' || state === 'interviewing') ? (
 		              <button
 		                type="button"
-		                onClick={navigateHome}
-	                className="inline-flex items-center gap-2 text-sm font-bold px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors"
-	              >
-	                <Home className="w-4 h-4" />
-	                {t('home', locale)}
-	              </button>
+		                onClick={() => {
+                      if (state === 'learning') {
+                        navigateHome();
+                      } else {
+                        handleReturnHomeFromInterview();
+                      }
+                    }}
+		                className="inline-flex items-center gap-2 text-sm font-bold px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors"
+		              >
+		                <Home className="w-4 h-4" />
+		                {t('home', locale)}
+		              </button>
 	            ) : null}
 		              {!authUser ? (
 		                <button
@@ -7924,7 +10261,7 @@ export default function App() {
         ref={cvInputRef}
         type="file"
         className="hidden"
-        accept=".pdf,.doc,.docx,.txt,.md,.markdown,.rtf"
+        accept=".doc,.docx,.txt,.md,.markdown,.rtf"
         onChange={(e) => {
           handleCvFileSelected(e.target.files);
           e.currentTarget.value = '';
@@ -8081,7 +10418,7 @@ export default function App() {
                     <div className="rounded-xl border border-dashed border-emerald-300 bg-emerald-50/60 p-4">
                       <p className="text-sm font-semibold text-emerald-800">Upload your CV</p>
                       <p className="text-xs text-emerald-700 mt-1">
-                        Accepted: PDF, DOC/DOCX, TXT, MD, RTF (max 8 MB). Files with little or no readable text are rejected.
+                        Accepted: DOC/DOCX, TXT, MD, RTF (max 8 MB). Files with little or no readable text are rejected.
                       </p>
                       <div className="mt-3 flex flex-wrap items-center gap-2">
                         <button
@@ -8632,6 +10969,87 @@ export default function App() {
       </AnimatePresence>
 
       <AnimatePresence>
+        {analyticsCommentsModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[132] p-3 md:p-6 flex items-center justify-center"
+          >
+            <button
+              type="button"
+              onClick={() => setAnalyticsCommentsModalOpen(false)}
+              aria-label="Close comments"
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 14, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 14, scale: 0.98 }}
+              className="relative w-full max-w-4xl max-h-[88vh] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
+            >
+              <div className="px-4 md:px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Comments</p>
+                  <p className="text-base font-semibold text-slate-900">
+                    {activeAnalyticsCourse?.title || activeAnalyticsCourseId || 'Course'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAnalyticsCommentsModalOpen(false)}
+                  className="h-10 w-10 rounded-lg border border-slate-300 bg-white text-slate-900 hover:bg-slate-100 flex items-center justify-center"
+                  aria-label="Close comments popup"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="px-4 md:px-6 py-4 max-h-[64vh] overflow-auto">
+                {analyticsCommentsBusy ? (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 inline-flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Loading comments...
+                  </div>
+                ) : analyticsCommentsError ? (
+                  <p className="text-sm text-red-600">{analyticsCommentsError}</p>
+                ) : analyticsCommentsRows.length ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {analyticsCommentsRows.map((row) => {
+                      const commenterIdentity = publicIdentityByAccountId[String(row.accountId || '').trim()];
+                      const commenterName = commenterIdentity?.displayName || fallbackPublicDisplayName(row.accountId);
+                      const commenterAvatar = commenterIdentity?.profileImageDataUrl || DEFAULT_PUBLIC_PROFILE_IMAGE;
+                      return (
+                        <article key={`analytics-comment-${row.id}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <img
+                              src={commenterAvatar}
+                              alt={commenterName}
+                              className="h-8 w-8 rounded-full border border-slate-200 bg-white object-cover"
+                              onError={(e) => {
+                                if (e.currentTarget.src.endsWith(DEFAULT_PUBLIC_PROFILE_IMAGE)) return;
+                                e.currentTarget.src = DEFAULT_PUBLIC_PROFILE_IMAGE;
+                              }}
+                            />
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-slate-800 truncate">{commenterName}</p>
+                              <p className="text-[11px] text-slate-500">{new Date(row.createdAt).toLocaleString()}</p>
+                            </div>
+                          </div>
+                          <p className="text-sm text-slate-700 break-words">{row.text}</p>
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500">No comments yet.</p>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {state === 'outline_review' && outlineEditSummary && isOutlineSummaryModalOpen && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -8672,10 +11090,10 @@ export default function App() {
                 </span>
               </div>
 
-              <div className="px-4 md:px-6 py-4 max-h-[55vh] overflow-auto space-y-3">
-                {outlineEditSummary.changes.map((change) => (
-                  <button
-                    key={`outline-modal-change-${change.targetKey}-${change.label}`}
+	              <div className="px-4 md:px-6 py-4 max-h-[64vh] overflow-auto space-y-3">
+	                {outlineEditSummary.changes.map((change) => (
+	                  <button
+	                    key={`outline-modal-change-${change.targetKey}-${change.label}`}
                     type="button"
                     onClick={() => {
                       setOutlineFocusTargetKey(change.targetKey);
@@ -8683,38 +11101,68 @@ export default function App() {
                         setOutlineReviewLessonByModule((prev) => ({ ...prev, [change.moduleId]: change.lessonNumber as number }));
                       }
                     }}
-                    className={cn(
-                      "w-full rounded-xl border bg-white p-3 text-left transition-colors",
-                      change.changed
-                        ? "border-emerald-200 hover:bg-emerald-50/60"
-                        : "border-slate-200 hover:bg-slate-50"
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs font-semibold text-slate-900">{change.label}</p>
-                      <span className={cn(
-                        "text-[10px] font-mono uppercase tracking-widest px-2 py-1 rounded-full border",
-                        change.changed
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                          : "border-slate-200 bg-slate-50 text-slate-500"
-                      )}>
-                        {change.changed ? t('updatedLabel', locale) : t('noChangeLabel', locale)}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500 mt-1 line-clamp-2 break-words">
-                      {t('instructionLabel', locale)}: {change.instruction}
-                    </p>
-                    <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
-                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-2">
-                        <p className="text-[10px] font-mono uppercase tracking-widest text-slate-500">{t('beforeLabel', locale)}</p>
-                        <p className="text-xs text-slate-700 mt-1 line-clamp-3 break-words">{change.before || t('naLabel', locale)}</p>
-                      </div>
-                      <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-2">
-                        <p className="text-[10px] font-mono uppercase tracking-widest text-emerald-600">{t('afterLabel', locale)}</p>
-                        <p className="text-xs text-emerald-900 mt-1 line-clamp-3 break-words">{change.after || t('naLabel', locale)}</p>
-                      </div>
-                    </div>
-                  </button>
+	                    className={cn(
+	                      "w-full rounded-xl border p-3 text-left transition-colors",
+	                      change.changed
+	                        ? "border-emerald-200 bg-white hover:bg-emerald-50/40"
+	                        : "border-amber-300 bg-amber-50/60 hover:bg-amber-100/50"
+	                    )}
+	                  >
+	                    <div className="flex items-center justify-between gap-2">
+	                      <p className="text-xs font-semibold text-slate-900">{change.label}</p>
+	                      <span className={cn(
+	                        "text-[10px] font-mono uppercase tracking-widest px-2 py-1 rounded-full border",
+	                        change.changed
+	                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+	                          : "border-amber-300 bg-amber-100 text-amber-700"
+	                      )}>
+	                        {change.changed ? t('updatedLabel', locale) : t('noChangeLabel', locale)}
+	                      </span>
+	                    </div>
+	                    <p className="text-[11px] text-slate-500 mt-1 break-words whitespace-pre-wrap">
+	                      {t('instructionLabel', locale)}: {change.instruction}
+	                    </p>
+	                    <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
+	                      <div className={cn(
+	                        "rounded-lg border p-2",
+	                        change.changed
+	                          ? "border-rose-200 bg-rose-50/80"
+	                          : "border-amber-300 bg-amber-100/70"
+	                      )}>
+	                        <p className={cn(
+	                          "text-[10px] font-mono uppercase tracking-widest",
+	                          change.changed ? "text-rose-700" : "text-amber-700"
+	                        )}>
+	                          {t('beforeLabel', locale)}
+	                        </p>
+	                        <p className={cn(
+	                          "text-xs mt-1 break-words whitespace-pre-wrap max-h-44 overflow-auto pr-1",
+	                          change.changed ? "text-rose-900" : "text-amber-900"
+	                        )}>
+	                          {change.before || t('naLabel', locale)}
+	                        </p>
+	                      </div>
+	                      <div className={cn(
+	                        "rounded-lg border p-2",
+	                        change.changed
+	                          ? "border-emerald-200 bg-emerald-50/80"
+	                          : "border-amber-300 bg-amber-100/70"
+	                      )}>
+	                        <p className={cn(
+	                          "text-[10px] font-mono uppercase tracking-widest",
+	                          change.changed ? "text-emerald-700" : "text-amber-700"
+	                        )}>
+	                          {t('afterLabel', locale)}
+	                        </p>
+	                        <p className={cn(
+	                          "text-xs mt-1 break-words whitespace-pre-wrap max-h-44 overflow-auto pr-1",
+	                          change.changed ? "text-emerald-900" : "text-amber-900"
+	                        )}>
+	                          {change.after || t('naLabel', locale)}
+	                        </p>
+	                      </div>
+	                    </div>
+	                  </button>
                 ))}
               </div>
 
@@ -8752,7 +11200,6 @@ export default function App() {
                 {[
                   { key: 'learn' as const, icon: Home, label: t('navLearn', locale) },
                   { key: 'community' as const, icon: Users, label: t('navCommunity', locale) },
-                  { key: 'leaderboard' as const, icon: Trophy, label: t('navLeaderboard', locale) },
                   { key: 'profile' as const, icon: UserCircle2, label: t('navProfile', locale) },
                   { key: 'downloads' as const, icon: Download, label: t('navDownloads', locale) },
                 ].map((item) => {
@@ -8797,6 +11244,9 @@ export default function App() {
                             onClick={() => {
                               setActiveAnalyticsCourseId('');
                               setCourseAnalyticsError(null);
+                              setAnalyticsCommentsModalOpen(false);
+                              setAnalyticsCommentsError(null);
+                              setAnalyticsCommentsRows([]);
                             }}
                             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
                           >
@@ -8842,10 +11292,14 @@ export default function App() {
                                 <p className="text-xs text-slate-500">Downloads</p>
                                 <p className="text-lg font-bold text-slate-900">{activeCourseAnalytics.downloads}</p>
                               </div>
-                              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                              <button
+                                type="button"
+                                onClick={() => void handleOpenAnalyticsComments()}
+                                className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-left hover:border-emerald-200 hover:bg-emerald-50/40 transition-colors"
+                              >
                                 <p className="text-xs text-slate-500">Comments</p>
                                 <p className="text-lg font-bold text-slate-900">{activeCourseAnalytics.comments}</p>
-                              </div>
+                              </button>
                               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                                 <p className="text-xs text-slate-500">Avg completion</p>
                                 <p className="text-lg font-bold text-slate-900">{activeCourseAnalytics.averageCompletionRate.toFixed(1)}%</p>
@@ -8963,10 +11417,10 @@ export default function App() {
                           </div>
                         )}
                         <div className="min-w-0">
-                          <p className="text-sm font-semibold text-slate-900">Profile photo from CV</p>
+                          <p className="text-sm font-semibold text-slate-900"></p>
                           <p className="text-xs text-slate-500">
                             {cvProfile?.profileImageDataUrl
-                              ? 'Using the detected candidate photo from your latest CV upload.'
+                              ? ''
                               : 'Upload a CV with a clear portrait photo to auto-fill this image.'}
                           </p>
                         </div>
@@ -9241,16 +11695,31 @@ export default function App() {
 	                    </section>
 
 		                    <section className="rounded-2xl border border-slate-200 bg-white p-5">
-		                      <div className="flex items-center justify-between gap-3">
+		                      <div className="flex flex-wrap items-center justify-between gap-3">
 		                        <h3 className="text-lg font-bold text-slate-900">Career guidance</h3>
-		                        <button
-		                          type="button"
-		                          onClick={() => setCareerPromptSeed((prev) => prev + 1)}
-		                          disabled={!careerGuidanceEnabled}
-		                          className="text-xs rounded-lg border border-slate-200 px-3 py-1.5 bg-slate-50 hover:bg-slate-100"
-		                        >
-		                          Refresh
-		                        </button>
+		                        <div className="w-full md:w-auto flex items-center gap-2">
+		                          <input
+		                            value={careerCustomRoleInput}
+		                            onChange={(e) => setCareerCustomRoleInput(e.target.value)}
+		                            onKeyDown={(e) => {
+		                              if (e.key !== 'Enter') return;
+		                              e.preventDefault();
+		                              void handleAddCustomCareerRole();
+		                            }}
+		                            disabled={!careerGuidanceEnabled || careerCustomRoleBusy}
+		                            placeholder="Custom role title"
+		                            className="w-full md:w-56 rounded-lg border border-slate-200 px-3 py-1.5 text-xs bg-white text-slate-700 disabled:bg-slate-50 disabled:text-slate-400"
+		                          />
+		                          <button
+		                            type="button"
+		                            onClick={() => { void handleAddCustomCareerRole(); }}
+		                            disabled={!careerGuidanceEnabled || careerCustomRoleBusy || !normalizePromptInput(careerCustomRoleInput)}
+		                            className="inline-flex items-center gap-1.5 text-xs rounded-lg border border-slate-200 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
+		                          >
+		                            {careerCustomRoleBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+		                            {careerCustomRoleBusy ? 'Analyzing...' : 'Add Job'}
+		                          </button>
+		                        </div>
 		                      </div>
 		                      <p className="text-sm text-slate-600 mt-1">
 		                        Recommendations from your CV and interests. Sources are linked for each role.
@@ -9266,6 +11735,17 @@ export default function App() {
 			                            Career guidance is locked until a valid CV is verified.
 			                          </div>
 			                        ) : null}
+		                        {careerGuidanceEnabled && careerGuidanceBusy ? (
+		                          <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-3 text-sm text-cyan-800 inline-flex items-center gap-2">
+		                            <Loader2 className="w-4 h-4 animate-spin" />
+		                            Generating role recommendations with Mistral...
+		                          </div>
+		                        ) : null}
+		                        {careerGuidanceEnabled && careerGuidanceNotice ? (
+		                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+		                            {careerGuidanceNotice}
+		                          </div>
+		                        ) : null}
 		                        {careerGuidanceEnabled && matchedCareerGuides.map((guide) => (
 		                          <details key={guide.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
 		                            <summary className="cursor-pointer text-sm font-semibold text-slate-900">{guide.title}</summary>
@@ -9274,22 +11754,22 @@ export default function App() {
 	                              <div className="rounded-lg border border-slate-200 bg-white p-3">
 	                                <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Responsibilities</p>
 	                                <ul className="mt-2 list-disc list-inside text-xs text-slate-700 space-y-1">
-	                                  {guide.responsibilities.map((item) => (
+	                                  {(guide.responsibilities || []).length ? guide.responsibilities.map((item) => (
 	                                    <li key={`${guide.id}-resp-${item}`}>{item}</li>
-	                                  ))}
+	                                  )) : <li>Role responsibilities were not provided.</li>}
 	                                </ul>
 	                              </div>
 	                              <div className="rounded-lg border border-slate-200 bg-white p-3">
 	                                <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Requirements</p>
 	                                <ul className="mt-2 list-disc list-inside text-xs text-slate-700 space-y-1">
-	                                  {guide.requirements.map((item) => (
+	                                  {(guide.requirements || []).length ? guide.requirements.map((item) => (
 	                                    <li key={`${guide.id}-req-${item}`}>{item}</li>
-	                                  ))}
+	                                  )) : <li>Role requirements were not provided.</li>}
 	                                </ul>
 	                              </div>
 	                            </div>
 	                            <div className="mt-3 flex flex-wrap gap-2">
-	                              {guide.sources.map((source) => (
+	                              {(guide.sources || []).map((source) => (
 	                                <a
 	                                  key={`${guide.id}-src-${source.url}`}
 	                                  href={source.url}
@@ -9300,26 +11780,123 @@ export default function App() {
 	                                  Source: {source.label}
 	                                </a>
 	                              ))}
-		                            </div>
-		                          </details>
-		                        ))}
-		                        {careerGuidanceEnabled && !matchedCareerGuides.length ? (
-		                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-		                            Add career interests or complete CV sections to generate role guidance.
-		                          </div>
-		                        ) : null}
-			                      </div>
-			                    </section>
+			                            </div>
+			                          </details>
+			                        ))}
+			                        {careerGuidanceEnabled && !careerGuidanceBusy && !matchedCareerGuides.length ? (
+			                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+			                            Add career interests or complete CV sections to generate role guidance.
+			                          </div>
+			                        ) : null}
+				                      </div>
+				                    </section>
 
-		                    <section className="rounded-2xl border border-slate-200 bg-white p-5">
-		                      <div className="flex items-center justify-between gap-2">
-		                        <h3 className="text-lg font-bold text-slate-900">Currently Learning Courses</h3>
+				                    <section className="rounded-2xl border border-slate-200 bg-white p-5">
+				                      <div className="flex items-center justify-between gap-2">
+				                        <h3 className="text-lg font-bold text-slate-900">Interview dashboard</h3>
+				                        <span className="text-xs text-slate-500">{interviewHistoryRows.length} histories</span>
+				                      </div>
+				                      <p className="text-sm text-slate-600 mt-1">
+				                        Reuse previous interview question sets and review final feedback without generating new questions.
+				                      </p>
+				                      {interviewHistoryRows.length ? (
+				                        <div className="mt-4 grid grid-cols-1 xl:grid-cols-2 gap-4">
+				                          {interviewHistoryRows.map((entry) => {
+				                            const totalQuestions = entry.session.questions.length;
+				                            const languageValue = normalizeInterviewLanguageSelection(entry.targetLanguage);
+				                            const languageLabel = INTERVIEW_LANGUAGE_OPTIONS.find((opt) => opt.value === languageValue)?.label || languageValue;
+				                            return (
+				                              <article key={entry.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+				                                <div className="flex items-start justify-between gap-3">
+				                                  <div className="min-w-0">
+				                                    <p className="text-sm font-bold text-slate-900 line-clamp-2">{entry.jobTitle}</p>
+				                                    <p className="text-xs text-slate-500 mt-1">{new Date(entry.createdAt).toLocaleString()}</p>
+				                                  </div>
+				                                  <span className="text-xs rounded-lg border px-2.5 py-1.5 font-semibold bg-cyan-50 border-cyan-200 text-cyan-700 shrink-0">
+				                                    {totalQuestions} questions
+				                                  </span>
+				                                </div>
+
+				                                <div className="grid grid-cols-3 gap-2 text-xs">
+				                                  <div className="rounded-lg border border-slate-200 bg-white p-2">
+				                                    <p className="text-slate-500">Focus</p>
+				                                    <p className="font-bold text-slate-900 capitalize">{entry.questionFocus}</p>
+				                                  </div>
+				                                  <div className="rounded-lg border border-slate-200 bg-white p-2">
+				                                    <p className="text-slate-500">Level</p>
+				                                    <p className="font-bold text-slate-900 capitalize">{entry.seniority}</p>
+				                                  </div>
+				                                  <div className="rounded-lg border border-slate-200 bg-white p-2">
+				                                    <p className="text-slate-500">Language</p>
+				                                    <p className="font-bold text-slate-900">{languageLabel}</p>
+				                                  </div>
+				                                </div>
+
+				                                <div className="rounded-xl border border-slate-200 bg-white p-3">
+				                                  <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Question set</p>
+				                                  <ol className="mt-2 list-decimal list-inside space-y-1 text-xs text-slate-700">
+				                                    {entry.session.questions.slice(0, 3).map((question) => (
+				                                      <li key={`${entry.id}-${question.id}`} className="line-clamp-2">{question.question}</li>
+				                                    ))}
+				                                  </ol>
+				                                  {totalQuestions > 3 ? (
+				                                    <p className="mt-2 text-[11px] text-slate-500">+{totalQuestions - 3} more questions</p>
+				                                  ) : null}
+				                                </div>
+
+				                                {entry.finalReview?.summary ? (
+				                                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3">
+				                                    <p className="text-xs font-semibold text-emerald-800 mb-1">Final feedback</p>
+				                                    <p className="text-xs text-emerald-900 line-clamp-4">{entry.finalReview.summary}</p>
+				                                  </div>
+				                                ) : (
+				                                  <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600">
+				                                    Final feedback is not available for this history entry.
+				                                  </div>
+				                                )}
+
+				                                <div className="flex flex-wrap gap-2">
+				                                  <button
+				                                    type="button"
+				                                    onClick={() => handlePracticeInterviewFromHistory(entry)}
+				                                    className="inline-flex items-center gap-1.5 text-xs rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-emerald-700 hover:bg-emerald-100"
+				                                  >
+				                                    Practice same set
+				                                  </button>
+				                                  {entry.finalReview ? (
+				                                    <button
+				                                      type="button"
+				                                      onClick={() => handleOpenInterviewHistoryReport(entry)}
+				                                      className="inline-flex items-center gap-1.5 text-xs rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-slate-700 hover:bg-slate-100"
+				                                    >
+				                                      View report
+				                                    </button>
+				                                  ) : null}
+				                                </div>
+				                              </article>
+				                            );
+				                          })}
+				                        </div>
+				                      ) : (
+				                        <p className="text-sm text-slate-500 mt-3">
+				                          No interview history yet. Complete an interview and final review to save your first interview card.
+				                        </p>
+				                      )}
+				                    </section>
+
+			                    <section className="rounded-2xl border border-slate-200 bg-white p-5">
+			                      <div className="flex items-center justify-between gap-2">
+			                        <h3 className="text-lg font-bold text-slate-900">Currently Learning Courses</h3>
 		                      </div>
 		                      {currentlyLearningCourses.length ? (
 		                        <div className="mt-4 grid grid-cols-1 xl:grid-cols-2 gap-4">
 		                          {currentlyLearningCourses.map((row) => {
 		                            const metrics = row.metrics || DEFAULT_IMPACT;
-		                            const completionRaw = Number(metrics.completionRate || 0);
+		                            const storedProgress = loadStoredCourseProgress(String(row.courseId || '').trim());
+		                            const storedCompletionPct = computeStoredCourseCompletionPercent(storedProgress);
+		                            const completionRaw = Number.isFinite(Number(storedCompletionPct))
+		                              ? Number(storedCompletionPct)
+		                              : Number(metrics.completionRate || 0);
 		                            const completionPct = completionRaw > 1
 		                              ? Math.round(completionRaw)
 		                              : Math.round(completionRaw * 100);
@@ -9330,9 +11907,22 @@ export default function App() {
 		                                    <p className="text-sm font-bold text-slate-900 line-clamp-2">{row.title || row.courseId}</p>
 		                                    <p className="text-xs text-slate-500 line-clamp-2 mt-1">{row.description || row.courseId}</p>
 		                                  </div>
-		                                  <span className="text-xs rounded-lg border px-2.5 py-1.5 font-semibold bg-cyan-50 border-cyan-200 text-cyan-700">
-		                                    {completionPct >= 100 ? 'Completed' : 'In Progress'}
-		                                  </span>
+		                                  <div className="flex items-center gap-2 shrink-0">
+		                                    <span className="text-xs rounded-lg border px-2.5 py-1.5 font-semibold bg-cyan-50 border-cyan-200 text-cyan-700">
+		                                      {completionPct >= 100 ? 'Completed' : 'In Progress'}
+		                                    </span>
+		                                    {completionPct < 100 ? (
+		                                      <button
+		                                        type="button"
+		                                        onClick={() => void handleContinueLearningCourse(row)}
+		                                        disabled={isOpeningCourse}
+		                                        className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-60 disabled:cursor-not-allowed"
+		                                      >
+		                                        {isOpeningCourse ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+		                                        Continue learning
+		                                      </button>
+		                                    ) : null}
+		                                  </div>
 		                                </div>
 		                                <div className="grid grid-cols-3 gap-2 text-xs">
 		                                  <div className="rounded-lg border border-slate-200 bg-white p-2">
@@ -9355,12 +11945,34 @@ export default function App() {
 		                      ) : (
 		                        <p className="text-sm text-slate-500 mt-3">No learning activity yet.</p>
 		                      )}
-		                    </section>
+			                    </section>
 
-		                    <section className="rounded-2xl border border-slate-200 bg-white p-5">
-		                      <div className="flex items-center justify-between gap-2">
-	                        <h3 className="text-lg font-bold text-slate-900">{t('createdCourses', locale)}</h3>
-	                      </div>
+			                    <section className="rounded-2xl border border-slate-200 bg-white p-5">
+			                      <div className="flex items-center justify-between gap-2">
+			                        <h3 className="text-lg font-bold text-slate-900">Hall of Fame</h3>
+			                        <span className="text-xs text-slate-500">{hallOfFameCards.length} collectibles</span>
+			                      </div>
+			                      {hallOfFameCards.length ? (
+			                        <div className="mt-4 grid grid-cols-1 xl:grid-cols-2 gap-3">
+			                          {hallOfFameCards.map((card) => (
+			                            <article key={card.id} className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 space-y-2">
+			                              <p className="text-sm font-bold text-emerald-900 line-clamp-2">{card.courseTitle}</p>
+			                              <div className="flex items-center justify-between text-xs text-emerald-800">
+			                                <span>Modules: {Math.max(1, card.moduleCount || 1)}</span>
+			                                <span>{card.earnedAt ? new Date(card.earnedAt).toLocaleDateString() : '-'}</span>
+			                              </div>
+			                            </article>
+			                          ))}
+			                        </div>
+			                      ) : (
+			                        <p className="text-sm text-slate-500 mt-3">Complete a full course final module assessment to unlock your first collectible card.</p>
+			                      )}
+			                    </section>
+
+			                    <section className="rounded-2xl border border-slate-200 bg-white p-5">
+			                      <div className="flex items-center justify-between gap-2">
+		                        <h3 className="text-lg font-bold text-slate-900">{t('createdCourses', locale)}</h3>
+		                      </div>
 
                       {profileCreatedCourses.length ? (
                         <div className="mt-4 grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -9455,16 +12067,39 @@ export default function App() {
                                       <div className="rounded-md bg-orange-500 w-full" style={{ height: `${Math.min(100, Math.max(4, (post.saves || 0) * 15))}%` }} />
                                     </div>
                                   </div>
-	                                  {!isDraftOnly && !!String(post.courseId || '').trim() ? (
-	                                    <button
-	                                      type="button"
-	                                      onClick={() => void handleOpenAnalyticsStudio(post)}
-	                                      className="mt-3 inline-flex items-center gap-1.5 text-xs rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-slate-700 hover:bg-slate-100"
-                                    >
-                                      <BarChart3 className="w-3.5 h-3.5" />
-                                      Analytics studio
-                                    </button>
-                                  ) : null}
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    {isDraftOnly ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => void handleContinueCraftingCourse(post)}
+                                        disabled={isOpeningCourse}
+                                        className="inline-flex items-center gap-1.5 text-xs rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-amber-700 hover:bg-amber-100 disabled:opacity-60"
+                                      >
+                                        {isOpeningCourse ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                                        Continue crafting
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => void handleLearnNowFromPost(post)}
+                                        disabled={isOpeningCourse}
+                                        className="inline-flex items-center gap-1.5 text-xs rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"
+                                      >
+                                        {isOpeningCourse ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BookOpen className="w-3.5 h-3.5" />}
+                                        Learn now
+                                      </button>
+                                    )}
+                                    {!isDraftOnly && !!String(post.courseId || '').trim() ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => void handleOpenAnalyticsStudio(post)}
+                                        className="inline-flex items-center gap-1.5 text-xs rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-slate-700 hover:bg-slate-100"
+                                      >
+                                        <BarChart3 className="w-3.5 h-3.5" />
+                                        Analytics studio
+                                      </button>
+                                    ) : null}
+                                  </div>
                                 </div>
                               </article>
                             );
@@ -9765,35 +12400,6 @@ export default function App() {
             </motion.div>
           )}
 
-                {activeHomeTab === 'leaderboard' && (
-            <motion.div
-              key="leaderboard-tab"
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -16 }}
-              className="max-w-3xl mx-auto"
-            >
-              <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                <h2 className="text-xl font-bold text-slate-900">{t('leaderboardTitle', locale)}</h2>
-                <p className="text-sm text-slate-500 mt-1">{t('leaderboardSubtitle', locale)}</p>
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-xs text-slate-500">{t('totalXp', locale)}</p>
-                    <p className="text-lg font-bold text-slate-900">{points}</p>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-xs text-slate-500">{t('dayStreak', locale)}</p>
-                    <p className="text-lg font-bold text-slate-900">{streak}</p>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-xs text-slate-500">{t('globalRank', locale)}</p>
-                    <p className="text-lg font-bold text-slate-900">#{Math.max(1, 1000 - (points + streak))}</p>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          )}
-
                 {activeHomeTab === 'learn' && (
             <motion.div 
               key="idle"
@@ -9943,7 +12549,7 @@ export default function App() {
                     <div className="hidden md:block md:flex-shrink-0">
                       <ModelPicker
                         provider={normalizeProvider(routerProvider)}
-                        model={routerModel || 'auto'}
+                        model={routerModel || AUTO_FAST_MODEL}
                         onChange={(next) => {
                           setRouterProvider(next.provider);
                           setRouterModel(next.model);
@@ -9982,7 +12588,7 @@ export default function App() {
                   <div className="md:hidden">
                     <ModelPicker
                       provider={normalizeProvider(routerProvider)}
-                      model={routerModel || 'auto'}
+                      model={routerModel || AUTO_FAST_MODEL}
                       onChange={(next) => {
                         setRouterProvider(next.provider);
                         setRouterModel(next.model);
@@ -10244,7 +12850,7 @@ export default function App() {
 	                  <p className="text-xs text-slate-500 mt-1">Choose which style appears more often.</p>
 	                  <select
 	                    value={interviewQuestionFocus}
-	                    onChange={(e) => setInterviewQuestionFocus(e.target.value as 'mixed' | 'behavioral' | 'technical')}
+	                    onChange={(e) => setInterviewQuestionFocus(e.target.value as InterviewQuestionFocus)}
 	                    className="mt-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
 	                  >
 	                    <option value="mixed">Mixed</option>
@@ -10258,7 +12864,7 @@ export default function App() {
 	                  <p className="text-xs text-slate-500 mt-1">Adjust difficulty and expectation level.</p>
 	                  <select
 	                    value={interviewSeniority}
-	                    onChange={(e) => setInterviewSeniority(e.target.value as 'entry' | 'mid' | 'senior')}
+	                    onChange={(e) => setInterviewSeniority(e.target.value as InterviewSeniority)}
 	                    className="mt-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
 	                  >
 	                    <option value="entry">Entry-level</option>
@@ -10275,13 +12881,13 @@ export default function App() {
 	              ) : null}
 
 	              <div className="flex flex-wrap items-center justify-between gap-3">
-	                <button
-	                  type="button"
-	                  onClick={() => setState('idle')}
-	                  className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-	                >
-	                  Back
-	                </button>
+		                <button
+		                  type="button"
+		                  onClick={handleReturnHomeFromInterview}
+		                  className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+		                >
+		                  Home
+		                </button>
 	                <button
 	                  type="button"
 	                  onClick={() => void handleStartInterviewPreparation(selectedInterviewJobTitle || prompt)}
@@ -10323,12 +12929,7 @@ export default function App() {
               careerGuidanceEnabled={careerGuidanceEnabled}
               interviewAnswersByQuestionId={interviewAnswersByQuestionId}
               interviewFeedbackByQuestionId={interviewFeedbackByQuestionId}
-              onBackToLearn={() => {
-                stopInterviewRecording();
-                setComposerMode('default');
-                setState('idle');
-                setActiveHomeTab('learn');
-              }}
+	              onBackToLearn={handleReturnHomeFromInterview}
               onRefreshRoles={() => setCareerPromptSeed((prev) => prev + 1)}
               onSelectRole={(job) => {
                 setSelectedInterviewJobTitle(job.title);
@@ -10381,56 +12982,6 @@ export default function App() {
                 {globalError ? t('assessmentErrorSub', locale) : t('preparingAssessmentSub', locale)}
               </p>
               
-              {retryInfo && (
-                <div className="w-full max-w-md space-y-6">
-                  <motion.div 
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="bg-white border-2 border-orange-200 p-8 rounded-[40px] shadow-xl shadow-orange-500/5 relative overflow-hidden"
-                  >
-                    <div className="absolute top-0 left-0 w-full h-1 bg-orange-100">
-                      <motion.div 
-                        initial={{ width: "0%" }}
-                        animate={{ width: "100%" }}
-                        transition={{ duration: retryInfo.delay / 1000, ease: "linear" }}
-                        className="h-full bg-orange-500"
-                      />
-                    </div>
-                    <div className="flex items-center gap-4 text-orange-600 mb-4 justify-center">
-                      <RotateCcw className="w-5 h-5 animate-spin" />
-                      <span className="text-sm font-bold uppercase tracking-widest">Rate Limit Hit</span>
-                    </div>
-                    <p className="text-sm text-slate-600">
-                      The AI is busy. Retrying in <span className="font-bold text-orange-600">{Math.round(retryInfo.delay / 1000)}s</span>... 
-                      <span className="block mt-1 text-[10px] text-slate-400 uppercase tracking-widest">({retryInfo.attempt} attempts remaining)</span>
-                    </p>
-                  </motion.div>
-                  
-                  <div className="flex flex-col gap-4">
-                    <button
-                      onClick={() => setState('idle')}
-                      className="text-xs text-slate-400 hover:text-slate-600 transition-colors underline underline-offset-4"
-                    >
-                      Cancel and try again
-                    </button>
-
-                    <div className="flex items-center gap-4 py-2">
-                      <div className="h-px flex-1 bg-slate-100" />
-                      <span className="text-[10px] font-mono text-slate-300 uppercase tracking-widest">{t('orLabel', locale)}</span>
-                      <div className="h-px flex-1 bg-slate-100" />
-                    </div>
-
-                    <button 
-                      onClick={handleUseSample}
-                      className="flex items-center justify-center gap-2 px-6 py-3 bg-white border border-slate-200 hover:border-emerald-500 hover:text-emerald-600 text-slate-600 rounded-2xl transition-all text-sm font-bold shadow-sm"
-                    >
-                      <BookOpen className="w-4 h-4" />
-                      Explore Sample Course Instead
-                    </button>
-                  </div>
-                </div>
-              )}
-
               {globalError && !retryInfo && (
                 <div className="w-full max-w-md space-y-8">
                   <div className="bg-red-50 border border-red-100 p-8 rounded-[40px] shadow-sm">
@@ -10562,31 +13113,6 @@ export default function App() {
               <h2 className="text-3xl font-bold text-slate-900 mb-4">Architecting your curriculum...</h2>
               <p className="text-slate-500 mb-8">Our AI is analyzing your goals and structuring the optimal learning path.</p>
               
-              {retryInfo && (
-                <div className="space-y-4">
-                  <motion.div 
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-orange-500/5 border border-orange-500/10 p-4 rounded-2xl max-w-xs mx-auto"
-                  >
-                    <div className="flex items-center gap-3 text-orange-600 mb-1">
-                      <RotateCcw className="w-4 h-4 animate-spin" />
-                      <span className="text-sm font-bold uppercase tracking-wider">Rate Limit Hit</span>
-                    </div>
-                    <p className="text-xs text-orange-600/60">
-                      The AI is busy. Retrying in {Math.round(retryInfo.delay / 1000)}s... 
-                      ({retryInfo.attempt} attempts remaining)
-                    </p>
-                  </motion.div>
-                  
-                  <button
-                    onClick={() => setState('idle')}
-                    className="text-xs text-slate-400 hover:text-slate-600 transition-colors underline underline-offset-4"
-                  >
-                    Cancel and try again later
-                  </button>
-                </div>
-              )}
             </motion.div>
           )}
 
@@ -10949,6 +13475,9 @@ export default function App() {
                 const hasErrors = course.modules.some((module) => module.status === 'error');
                 setState('learning');
                 setActiveCourseOwnerId(accountId);
+                if (isOnline) {
+                  void refreshCoursePanels();
+                }
                 showMascotToast(
                   hasErrors ? 'Almost there!' : 'Good job!',
                   hasErrors
@@ -11303,7 +13832,7 @@ export default function App() {
                           </div>
                           <h3 className="text-2xl font-bold text-slate-900 mb-3">This module is not ready yet</h3>
                           <p className="text-slate-500 max-w-md">
-                            We could not generate the module lesson steps (usually due to rate limits).
+                            We could not generate the module lesson steps for this module.
                             Try again, or switch to the sample course.
                           </p>
                           <div className="mt-8 flex items-center gap-3">
@@ -11353,6 +13882,31 @@ export default function App() {
                         const resolvedVideoWatchUrl = content?.type === "VIDEO"
                           ? getYouTubeWatchUrl(content?.data?.videoUrl, content?.data?.videoWebUrl)
                           : '';
+                        const additionalVideoLinks = (() => {
+                          if (content?.type !== "VIDEO") return [] as Array<{ title: string; url: string }>;
+                          const refs = Array.isArray(content?.data?.references) ? content.data.references : [];
+                          const seen = new Set<string>();
+                          const links: Array<{ title: string; url: string }> = [];
+                          for (const ref of refs) {
+                            const rawRefUrl = String(ref?.url || '').trim();
+                            const watchUrl = getYouTubeWatchUrl(rawRefUrl, rawRefUrl);
+                            const normalizedUrl = watchUrl || (
+                              /^https?:\/\/(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(rawRefUrl)
+                                ? rawRefUrl
+                                : ''
+                            );
+                            if (!normalizedUrl) continue;
+                            if (resolvedVideoWatchUrl && watchUrl && watchUrl === resolvedVideoWatchUrl) continue;
+                            if (seen.has(normalizedUrl)) continue;
+                            seen.add(normalizedUrl);
+                            links.push({
+                              title: String(ref?.title || 'Related video').trim() || 'Related video',
+                              url: normalizedUrl,
+                            });
+                            if (links.length >= 4) break;
+                          }
+                          return links;
+                        })();
 
                         return (
                           <motion.div 
@@ -11398,21 +13952,6 @@ export default function App() {
                                   {step.status === 'pending' ? 'Waiting to start...' : 'Generating Content...'}
                                 </p>
                                 
-                                {retryInfo && (
-                                  <motion.div 
-                                    initial={{ opacity: 0, y: 10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    className="bg-orange-50 border border-orange-100 p-4 rounded-2xl max-w-xs mx-auto shadow-sm"
-                                  >
-                                    <div className="flex items-center gap-2 text-orange-600 mb-1">
-                                      <RotateCcw className="w-3 h-3 animate-spin" />
-                                      <span className="text-[10px] font-bold uppercase tracking-wider">Rate Limit Hit</span>
-                                    </div>
-                                    <p className="text-[10px] text-orange-600/60">
-                                      Retrying in {Math.round(retryInfo.delay / 1000)}s... 
-                                    </p>
-                                  </motion.div>
-                                )}
                               </div>
                             )}
 
@@ -11422,8 +13961,10 @@ export default function App() {
                                   <AlertCircle className="w-8 h-8 text-red-500" />
                                 </div>
                                 <div className="text-center px-6">
-                                  <p className="text-slate-900 font-bold mb-1">Failed to generate content</p>
-                                  <p className="text-sm text-slate-500">This usually happens due to API quota limits or network issues.</p>
+                                  <p className="text-slate-900 font-bold mb-1">Generation failed</p>
+                                  <p className="text-sm text-slate-500">
+                                    {String(step.errorMessage || '').trim() || 'This section could not be generated right now.'}
+                                  </p>
                                 </div>
                                 <button
                                   onClick={() => handleRetryStep(activeModule.id, step.id)}
@@ -11610,6 +14151,21 @@ export default function App() {
                                       <div className="prose prose-slate prose-sm max-w-none text-slate-600">
                                         <Markdown>{content.data.content}</Markdown>
                                       </div>
+                                      {additionalVideoLinks.length ? (
+                                        <div className="mt-4 flex flex-wrap gap-2">
+                                          {additionalVideoLinks.map((ref) => (
+                                            <a
+                                              key={`video-ref-${step.id}-${ref.url}`}
+                                              href={ref.url}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-600 hover:border-emerald-200 hover:text-emerald-700"
+                                            >
+                                              {ref.title}
+                                            </a>
+                                          ))}
+                                        </div>
+                                      ) : null}
                                       <div className="mt-6 flex flex-wrap items-center gap-3">
                                         <button
                                           type="button"

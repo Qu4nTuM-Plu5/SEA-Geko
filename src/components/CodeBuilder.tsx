@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Check, X, RotateCcw, Rocket } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Avatar } from './Avatar';
+import { shuffleListBySeed } from '../lib/shuffle';
 
 interface CodeBuilderProps {
   data: {
@@ -25,6 +26,16 @@ export const CodeBuilder: React.FC<CodeBuilderProps> = ({ data, onComplete }) =>
 
   const currentLine = data.lines[currentLineIdx];
   const isLastLine = currentLineIdx === data.lines.length - 1;
+  const displayOptions = useMemo(() => {
+    const options = Array.isArray(data.options)
+      ? data.options.map((option) => String(option).trim()).filter(Boolean)
+      : [];
+    const lineSeed = (Array.isArray(data.lines) ? data.lines : [])
+      .map((line) => `${String(line?.content || '')}::${String(line?.correctValue || '')}`)
+      .join('|');
+    const seedKey = `${String(data.title || '')}::${lineSeed}`;
+    return shuffleListBySeed(options, seedKey);
+  }, [data.options, data.lines, data.title]);
 
   const normalizeToken = (v: string) => String(v || '').replace(/\s+/g, ' ').trim();
 
@@ -107,9 +118,9 @@ export const CodeBuilder: React.FC<CodeBuilderProps> = ({ data, onComplete }) =>
 
       {!isFinished ? (
         <div className="flex flex-wrap gap-3 justify-center mt-8">
-          {data.options.map((option) => (
+          {displayOptions.map((option, optionIdx) => (
             <button
-              key={option}
+              key={`${option}-${optionIdx}`}
               onClick={() => handleOptionClick(option)}
               className={cn(
                 "px-4 md:px-6 py-3 rounded-xl font-mono text-sm md:text-base transition-all border bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-emerald-500/50 shadow-sm text-left whitespace-normal break-words max-w-full",

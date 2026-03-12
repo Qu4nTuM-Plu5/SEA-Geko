@@ -1,88 +1,205 @@
-# SEA-Geko (Nexus AI): Education Continuity for Low-Connectivity Learners
+# SEA-Geko (Nexus AI)
 
-SEA-Geko is an AI-powered course generator and learning app designed for **education access and learning continuity** in ASEAN, especially for users with unstable internet, low-bandwidth devices, and disrupted learning environments.
+AI-powered learning continuity prototype for low-connectivity environments.
 
-This repository keeps the original interactive learning functionality and adds scoring-focused features for hackathon judging:
-- beneficiary-specific onboarding
-- adaptive AI generation context
-- impact metric tracking
-- account-based offline downloaded courses
-- ASEAN language support
-- low-bandwidth mode
-- public/private publishing with moderation signals
-- cohort workflows
+---
 
-## 1) Hackathon Lane and SDG Mapping
+## 1) Project Details
 
-### AI Singapore lane (single-scope)
-- Primary lane: **Education access and learning continuity**
-- Beneficiaries: youth (18-35), educators, displaced learners, community organizations
+| Item | Description |
+| --- | --- |
+| Project name | SEA-Geko (Nexus AI) |
+| Core purpose | Generate adaptive learning content, support offline continuation, and track learner impact |
+| Main users | Youth, educators, displaced learners, community organizations |
+| Primary value | Learning can continue even with unstable internet and limited devices |
+| Built with | React + TypeScript + Vite (frontend), Node.js server (backend) |
 
-### Borneo alignment
-- Problem statement and objectives are explicit and measurable
-- Responsible AI and privacy docs are included
-- ASEAN scalability and stakeholder plan are documented
+### What this prototype does
 
-### SDG mapping
-- **SDG 4**: Quality Education
-- **SDG 8**: Decent Work and Economic Growth
-- **SDG 10**: Reduced Inequalities
+- Generates assessments, course outlines, lesson plans, and lesson content with AI.
+- Adapts generation based on profile context (`segment`, `connectivity`, `language`, `goal`, `region`).
+- Supports download-and-reopen learning for offline continuity.
+- Tracks impact events and KPI metrics (completion, confidence, skill gain proxies).
+- Includes community publishing, reactions/comments, reporting, and cohort flows.
+- Includes interview-preparation mode (questions, coaching feedback, final review).
 
-## 2) Core Product Capabilities
+---
 
-### Existing functionality preserved
-- AI-generated assessment, course outline, lesson plan, and step content
-- Multi-provider AI routing (Gemini/OpenAI/Anthropic/OpenRouter, with fallback behavior)
-- Locked progression and quiz-based completion flow
-- Tutor ask/edit flows (online)
-- Outline builder (auto and manual)
+## 2) System Overview
 
-### New scoring-focused functionality
-- Segment-aware onboarding:
-  - `userSegment`: youth, educator, displaced, community_org
-  - `connectivityLevel`: offline_first, low_bandwidth, normal
-  - `preferredLanguage`, `learningGoal`, `region`, `deviceClass`
-- Adaptive generation rules via `profileContext` in API payloads
-- Impact instrumentation:
-  - `course_started`, `lesson_started`, `lesson_completed`, `quiz_submitted`, `course_completed`, `daily_active`
-- KPI cards:
-  - skill gain, confidence gain, completion proxy, reached users
-- Offline continuity:
-  - account-based downloaded course snapshots in IndexedDB
-  - open downloaded courses without raw import/export
-  - AI generation/edit disabled while offline
-- Community features:
-  - publish course private/public
-  - moderation status and reporting endpoints
-  - cohort create/join flows
+| Layer | Path | Responsibility |
+| --- | --- | --- |
+| Frontend app | `src/` | UI, onboarding, generation flow, learning experience, offline UX |
+| Backend API | `server/server.cjs` | AI routing, validation, persistence, API endpoints |
+| Dev launcher | `scripts/dev-local.cjs` | Starts API + frontend together for local development |
+| Local demo data | `server/.data/app-db.json` | Demo persistence when Supabase is not configured |
+| Optional production DB/Auth | Supabase | Auth, profile/course/event persistence |
 
-## 3) Architecture
+---
 
-### Frontend
-- React + TypeScript + Vite
-- Main app flow in `src/App.tsx`
-- Offline persistence in `src/lib/offlineStore.ts`
-- Localization helper in `src/lib/i18n.ts`
+## 3) Prerequisites
 
-### Backend
-- Node HTTP server in `server/server.cjs`
-- AI routes + prompt builders + validation
-- Lightweight app persistence in `server/.data/app-db.json` (demo-mode storage)
+- Node.js 18+ (Node 20+ recommended)
+- npm
 
-### Data model target
-- Supabase migration included in `supabase/migrations/0001_core.sql`
-- Covers profiles, courses, progress events, impact attempts, public posts, moderation, and cohorts
+Check versions:
 
-## 4) API Endpoints (Implemented Surface)
+```bash
+node -v
+npm -v
+```
 
-- `GET /api/profile/me`
+---
+
+## 4) Setup Instructions
+
+### Step 1: Install dependencies
+
+```bash
+npm install
+```
+
+### Step 2: Create environment file
+
+PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Bash:
+
+```bash
+cp .env.example .env
+```
+
+### Step 3: Configure at least one AI provider
+
+Minimum requirement: one working provider key.
+
+Example:
+
+```env
+AI_PROVIDER_CANDIDATES=openrouter,ollama,mistral
+OPENROUTER_API_KEY=your_key_here
+```
+
+If you use other providers, include them in `AI_PROVIDER_CANDIDATES` and set their keys.
+
+---
+
+## 5) Run Instructions
+
+### Recommended local run (frontend + backend together)
+
+```bash
+npm run dev
+```
+
+What this does:
+
+- Starts backend server on `http://localhost:8787` (or next available port if 8787 is busy).
+- Starts frontend on `http://localhost:3000`.
+- Proxies `/api` from frontend to backend automatically.
+
+### Backend only
+
+```bash
+npm run dev:server
+```
+
+### Frontend only
+
+```bash
+npm run dev:web
+```
+
+### Production-style local run
+
+```bash
+npm run build
+npm run start
+```
+
+Then open:
+
+- `http://localhost:8787`
+
+### Type check
+
+```bash
+npm run lint
+```
+
+---
+
+## 6) How To Interact With the Prototype
+
+Use this exact flow to explore the prototype end-to-end.
+
+| Phase | Action | Expected output |
+| --- | --- | --- |
+| Launch | Open `http://localhost:3000` | App home screen loads |
+| Account/Profile | Sign in if Supabase auth is configured, then complete onboarding profile | Segment/connectivity/language/goal context saved |
+| Course generation | Enter a goal/topic and generate course outline + content | Structured modules and mixed step types are created |
+| Learning | Complete lessons and quizzes | Progress updates and impact events recorded |
+| Community | Publish course, browse feed, react/comment/report | Visibility and moderation-related states update |
+| Offline continuity | Download a course from Downloads tab, then reopen while offline | Downloaded course remains available from account snapshot |
+| Interview mode | Enable interview preparation and run a session | Questions, feedback, and final review are generated |
+
+Notes:
+
+- If Supabase is not configured, local demo mode still works using local account IDs and JSON persistence.
+- If no AI provider is available, generation endpoints will fail by design until provider setup is fixed.
+
+---
+
+## 7) Environment Variables
+
+Commonly used variables:
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `PORT` | No | Backend port (default `8787`) |
+| `AI_PROVIDER_CANDIDATES` | Yes (practical) | Provider order for routing |
+| `OPENROUTER_API_KEY` | Required if using OpenRouter | Enable OpenRouter requests |
+| `MISTRAL_API_KEY` or `MISTRAL_API_KEYS` | Required if using Mistral | Enable Mistral requests |
+| `OLLAMA_API_BASE` | Required if using Ollama | Local Ollama base URL |
+| `GEMINI_API_KEY` | Required if using Gemini | Enable Gemini requests |
+| `OPENAI_API_KEY` | Required if using OpenAI | Enable OpenAI requests |
+| `ANTHROPIC_API_KEY` | Required if using Anthropic | Enable Anthropic requests |
+| `YOUTUBE_API_KEY` | Optional | Better video lookup during content generation |
+| `VITE_SUPABASE_URL` / `SUPABASE_URL` | Optional | Enable Supabase integration |
+| `VITE_SUPABASE_ANON_KEY` / `SUPABASE_ANON_KEY` | Optional | Supabase client/auth |
+| `SUPABASE_SERVICE_ROLE_KEY` | Optional (backend only) | Server-side DB operations |
+
+Reference template:
+
+- `.env.example`
+
+Supabase setup guide:
+
+- `docs/supabase-setup.md`
+
+---
+
+## 8) API Surface (Main Endpoints)
+
+- `GET /api/config`
+- `GET /api/auth/config`
+- `POST /api/generate/assessment`
+- `POST /api/generate/course-outline`
+- `POST /api/generate/module-lesson-plan`
+- `POST /api/generate/step-content`
+- `POST /api/tutor/ask`
+- `POST /api/tutor/edit`
 - `POST /api/profile/upsert`
+- `GET /api/profile/me`
 - `POST /api/impact/pretest`
 - `POST /api/impact/posttest`
 - `POST /api/impact/confidence`
 - `POST /api/impact/event`
 - `GET /api/impact/summary`
-- `GET /api/courses/my`
 - `POST /api/courses/:id/publish`
 - `GET /api/public/feed`
 - `POST /api/public/:id/react`
@@ -91,74 +208,63 @@ This repository keeps the original interactive learning functionality and adds s
 - `POST /api/cohorts`
 - `POST /api/cohorts/:id/join`
 - `GET /api/cohorts/:id/dashboard`
-- `POST /api/progress/sync`
+- `POST /api/interview/session`
+- `POST /api/interview/feedback`
+- `POST /api/interview/final-review`
 
-## 5) Local Development
+---
 
-## Requirements
-- Node.js 18+
-- npm
+## 9) AI Disclosure
 
-## Install
-```bash
-npm install
-```
+This project uses generative AI as a core runtime component.
 
-## Run backend
-```bash
-npm run dev:server
-```
-Backend runs on `http://localhost:8787`.
+### Where AI is used
 
-## Run frontend
-```bash
-npm run dev
-```
-Frontend runs on `http://localhost:3000`.
+- Course creation: assessment, outline, lesson planning, and step content.
+- Tutor assistant: question answering and content editing.
+- Career and CV workflows: CV analysis and role guidance.
+- Interview preparation: session generation, answer feedback, final review.
 
-## Typecheck
-```bash
-npm run lint
-```
+### What users must understand
 
-## Production
-```bash
-npm run start:prod
-```
+- AI outputs may be inaccurate, incomplete, or biased.
+- Outputs should be reviewed by a human before formal educational deployment.
+- This system is not a medical, legal, or emergency decision tool.
+- Model quality, latency, and language performance vary by provider/model availability.
 
-## 6) Environment Variables
+### Data and personalization disclosure
 
-Current local setup can use `.env` in project root.
+- The app uses user-provided profile context (segment, language, connectivity, goal, region) to adapt output.
+- Learning events are collected to compute impact metrics.
+- In demo mode, persistence is local JSON storage.
+- In Supabase mode, auth and data are handled through configured Supabase services.
 
-Recommended production keys:
-- `PORT`
-- `GEMINI_API_KEY`
-- `OPENAI_API_KEY`
-- `ANTHROPIC_API_KEY`
-- `OPENROUTER_API_KEY`
-- `YOUTUBE_API_KEY` (optional)
-- `VITE_SUPABASE_URL` (target architecture)
-- `VITE_SUPABASE_ANON_KEY` (target architecture)
-- `SUPABASE_SERVICE_ROLE_KEY` (server-side only)
+---
 
-## 7) Responsible AI, Privacy, and Safety
+## 10) Safety, Privacy, and Responsible AI Docs
 
-See:
 - `docs/responsible-ai.md`
 - `docs/privacy-consent.md`
 - `docs/safety-moderation.md`
 - `docs/impact-metrics.md`
 
-## 8) Judge-Facing Submission Docs
+---
 
-- Borneo report: `docs/borneo-report.md`
-- AI Singapore brief: `docs/ai-singapore-brief.md`
-- Demo script: `pitch/demo-script-3min.md`
-- Slide structure: `pitch/slide-outline.md`
+## 11) Troubleshooting
 
-## 9) Known Limits (Transparent)
+| Problem | Likely cause | Fix |
+| --- | --- | --- |
+| App opens but generation fails | No provider key or unavailable provider | Set at least one valid provider key in `.env` |
+| Auth modal says Supabase not configured | Missing Supabase env vars | Add Supabase keys and restart server |
+| API not reachable from frontend | Backend not running or wrong port | Run `npm run dev` and confirm API logs |
+| No offline course found | Course was not downloaded | Download course first from Downloads tab |
+| Community actions not persisting as expected | Running in local demo mode only | Configure Supabase for production-like persistence |
 
-- Demo backend currently uses local JSON persistence, not full Supabase runtime integration.
-- Moderation is heuristic and not yet backed by dedicated safety classifiers.
-- Localization coverage is partial in current UI copy; core switching is in place.
-- KPI formulas are live but still simplified for hackathon speed.
+---
+
+## 12) Known Prototype Limits
+
+- Local demo persistence (`server/.data/app-db.json`) is not production-grade storage.
+- Moderation is prototype-level and not a complete safety enforcement system.
+- Impact calculations are practical KPI proxies for prototype demonstration.
+- Full production readiness requires hardened auth, rate limiting, and stronger moderation controls.

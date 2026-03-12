@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Check, X, RotateCcw } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { shuffleListBySeed } from '../lib/shuffle';
 
 interface DragFillProps {
   challenge: {
@@ -37,6 +38,13 @@ export const DragFillChallenge: React.FC<DragFillProps> = ({ challenge, onComple
   const normalizedTemplate = normalizeChallengeTemplate(challenge.codeTemplate);
   const parts = normalizedTemplate.split('___');
   const blankCount = Math.max(1, parts.length - 1);
+  const displayOptions = useMemo(() => {
+    const options = Array.isArray(challenge.options)
+      ? challenge.options.map((option) => String(option).trim()).filter(Boolean)
+      : [];
+    const seedKey = `${normalizedTemplate}::${String(challenge.correctAnswer || '')}`;
+    return shuffleListBySeed(options, seedKey);
+  }, [challenge.options, challenge.correctAnswer, normalizedTemplate]);
   const [selectedOptions, setSelectedOptions] = useState<(string | null)[]>(
     Array.from({ length: blankCount }, () => null)
   );
@@ -125,7 +133,7 @@ export const DragFillChallenge: React.FC<DragFillProps> = ({ challenge, onComple
       </div>
 
       <div className="flex flex-wrap gap-4 mb-10">
-        {challenge.options.map((option, optionIdx) => (
+        {displayOptions.map((option, optionIdx) => (
           <button
             key={`${option}-${optionIdx}`}
             onClick={() => handlePickOption(option)}

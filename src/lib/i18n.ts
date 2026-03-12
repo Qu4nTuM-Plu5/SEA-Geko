@@ -116,7 +116,7 @@ const OVERRIDES: Partial<Record<SupportedLocale, Dict>> = {
     lang: "\u0e20\u0e32\u0e29\u0e32",
   },
   vi: {
-    lang: "Ngon ngu",
+    lang: "Ngôn ngữ",
     lowBandwidth: "Che do tiet kiem du lieu",
     navLearn: "Hoc",
     navCommunity: "Cong dong",
@@ -138,10 +138,10 @@ const OVERRIDES: Partial<Record<SupportedLocale, Dict>> = {
     generating: "Gumagawa...",
   },
   km: {
-    lang: "áž—áž¶ážŸáž¶",
+    lang: "ភាសា",
   },
   lo: {
-    lang: "àºžàº²àºªàº²",
+    lang: "ພາສາ",
   },
 };
 
