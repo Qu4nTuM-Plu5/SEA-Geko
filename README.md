@@ -8,7 +8,7 @@ AI-powered learning continuity prototype for low-connectivity environments.
 
 | Item | Description |
 | --- | --- |
-| Project name | SEA-Geko (Nexus AI) |
+| Project name | SEA-Geko |
 | Core purpose | Generate adaptive learning content, support offline continuation, and track learner impact |
 | Main users | Youth, educators, displaced learners, community organizations |
 | Primary value | Learning can continue even with unstable internet and limited devices |
@@ -241,16 +241,7 @@ This project uses generative AI as a core runtime component.
 
 ---
 
-## 10) Safety, Privacy, and Responsible AI Docs
-
-- `docs/responsible-ai.md`
-- `docs/privacy-consent.md`
-- `docs/safety-moderation.md`
-- `docs/impact-metrics.md`
-
----
-
-## 11) Troubleshooting
+## 10) Troubleshooting
 
 | Problem | Likely cause | Fix |
 | --- | --- | --- |
@@ -262,7 +253,7 @@ This project uses generative AI as a core runtime component.
 
 ---
 
-## 12) Known Prototype Limits
+## 11) Known Prototype Limits
 
 - Local demo persistence (`server/.data/app-db.json`) is not production-grade storage.
 - Moderation is prototype-level and not a complete safety enforcement system.
