@@ -13,7 +13,7 @@ AI-powered learning continuity prototype for low-connectivity environments.
 | Main users | Youth, educators, displaced learners, community organizations |
 | Primary value | Learning can continue even with unstable internet and limited devices |
 | Built with | React + TypeScript + Vite (frontend), Node.js server (backend) |
-| Project Proposal Report | [View Borneo Report](report/Borneo Report.pdf) |
+| Project Proposal Report | [View Borneo Report](report/Borneo%20Report.pdf) |
 | Demostration Video | [Watch the Demo on YouTube](https://youtu.be/mgcs1bqcuMI) |
 
 
