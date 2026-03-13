@@ -1,4 +1,4 @@
-# SEA-Geko
+# SEA-Geko(Bridging the Gap from Classroom to Career)
 
 AI-powered learning continuity prototype for low-connectivity environments.
 
