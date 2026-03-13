@@ -144,9 +144,9 @@ Use this exact flow to explore the prototype end-to-end.
 | --- | --- | --- |
 | Launch | Open `http://localhost:3000` | App home screen loads |
 | Account/Profile | Sign in if Supabase auth is configured, then complete onboarding profile | Segment/connectivity/language/goal context saved |
-| Course generation | Enter a goal/topic and generate course outline + content | Structured modules and mixed step types are created |
-| Learning | Complete lessons and quizzes | Progress updates and impact events recorded |
-| Community | Publish course, browse feed, react/comment/report | Visibility and moderation-related states update |
+| Course generation | Enter a goal/topic and generate course outline + edit the outline + content | Structured modules and mixed step types are created |
+| Learning | Complete lessons and quizzes + edit the contents | Progress updates and impact events recorded |
+| Community | Publish course, browse feed, react/comment/share | Visibility and moderation-related states update |
 | Offline continuity | Download a course from Downloads tab, then reopen while offline | Downloaded course remains available from account snapshot |
 | Interview mode | Enable interview preparation and run a session | Questions, feedback, and final review are generated |
 
@@ -256,7 +256,7 @@ This project uses generative AI as a core runtime component.
 
 | Problem | Likely cause | Fix |
 | --- | --- | --- |
-| App opens but generation fails | No provider key or unavailable provider | Set at least one valid provider key in `.env` |
+| App opens but generation fails | No provider key or unavailable provider | Set at least one valid provider key in `.env` or add multiple keys in these holders MISTRAL_API_KEYS= , OPENROUTER_API_KEYS= |
 | Auth modal says Supabase not configured | Missing Supabase env vars | Add Supabase keys and restart server |
 | API not reachable from frontend | Backend not running or wrong port | Run `npm run dev` and confirm API logs |
 | No offline course found | Course was not downloaded | Download course first from Downloads tab |
